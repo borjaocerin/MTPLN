@@ -34,5 +34,5 @@ scraper = LiquipediaScraper('valorant')
 resultados = scraper.fetch_tournament_results('VCT/2024/Champions')
 
 # Guardar a JSON para el Chatbot
-with open('data/resultados_vct.json', 'w') as f:
+with open('../data/resultados_vct.json', 'w') as f:
     json.dump(resultados, f, indent=4)
