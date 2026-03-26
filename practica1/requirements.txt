@@ -1,0 +1,14 @@
+# Scraping y automatización de navegador
+selenium==4.20.0
+webdriver-manager==4.0.1
+
+# Manipulación de datos
+pandas==2.2.2
+numpy==1.26.4
+
+# Procesamiento de Lenguaje Natural (NLP)
+spacy==3.7.4
+nltk==3.8.1
+
+# Clasificación y Machine Learning (opcional para modelos pro)
+scikit-learn==1.4.2
