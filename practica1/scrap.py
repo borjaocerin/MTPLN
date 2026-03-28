@@ -1,4 +1,5 @@
 import time
+import re # Librería para limpieza de texto
 import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -9,65 +10,70 @@ from webdriver_manager.chrome import ChromeDriverManager
 # --- CONFIGURACIÓN ---
 urls_productos = [
     "https://www.mediamarkt.es/es/product/_apple-airpods-pro-3-2025-3a-gen-inalambricos-cancelacion-de-ruido-medicion-frecuencia-cardiaca-live-translation-chip-h2-usb-c-blanco-1606182.html",
-    # Añade aquí todas las URLs que quieras:
-    # "https://www.mediamarkt.es/es/product/_ejemplo-producto-2.html",
-    # "https://www.mediamarkt.es/es/product/_ejemplo-producto-3.html",
+    "https://www.mediamarkt.es/es/product/_auriculares-true-wireless-huawei-freeclip-2-38h-autonomia-ip57-open-ear-llamadas-nitidas-conexion-a-dos-dispositivos-azul-1617474.html",
+    "https://www.mediamarkt.es/es/product/_auriculares-true-wireless-xiaomi-buds-8-lite-36h-autonomia-cancelacion-de-ruido-ip54-diseno-ligero-negro-1621472.html",
+    "https://www.mediamarkt.es/es/product/_auriculares-inalambricos-comodidad-cancelacion-de-ruido-y-resistencia-al-agua-kinglucky-intraurales-rosa-161895991.html",
+    "https://www.mediamarkt.es/es/product/_auriculares-true-wireless-redmi-buds-6-play-xiaomi-intraurales-negro-145405399.html",
+    "https://www.mediamarkt.es/es/product/_auriculares-true-wireless-samsung-galaxy-buds3-pro-anc-bluetooth-54-audio-24bits-3-microfonos-reproduccion-hasta-30h-dual-amp-grafito-1578034.html"
 ]
-
 options = Options()
 options.add_argument("--start-maximized")
 options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
-todas_las_resenas = [] # Lista para acumular TODO
+solo_textos = [] 
+
+def limpiar_texto(texto):
+    # 1. Eliminar saltos de línea y tabulaciones
+    texto = texto.replace("\n", " ").replace("\r", " ").replace("\t", " ")
+    # 2. Eliminar espacios múltiples
+    texto = re.sub(r'\s+', ' ', texto)
+    # 3. Quitar espacios al inicio y final
+    return texto.strip()
 
 try:
     for index, url in enumerate(urls_productos):
-        print(f"\n📦 Procesando producto {index + 1}/{len(urls_productos)}: {url[:60]}...")
+        print(f"\n Procesando producto {index + 1}/{len(urls_productos)}")
         driver.get(url)
         time.sleep(5) 
 
-        # Aceptar cookies (solo suele pedirlo en la primera carga, pero por si acaso)
         try:
             driver.find_element(By.ID, "pwa-consent-layer-accept-all-button").click()
-            print("✅ Cookies aceptadas.")
         except: pass
 
-        # Scroll dinámico
-        print("⬇️ Bajando para cargar reseñas...")
-        for i in range(25): 
-            driver.execute_script("window.scrollBy(0, 1000);")
-            time.sleep(1)
+        for i in range(15): 
+            driver.execute_script("window.scrollBy(0, 800);")
+            time.sleep(0.5)
 
-        # Extracción de bloques
         bloques = driver.find_elements(By.CLASS_NAME, "sc-e8a38d00-0")
-        print(f"🔎 Bloques encontrados en este producto: {len(bloques)}")
-
+        
         for bloque in bloques:
-            # Intentar desplegar "Mostrar más" si existe
             try:
                 btn_mas = bloque.find_element(By.CSS_SELECTOR, "button[data-test='expand-button']")
                 driver.execute_script("arguments[0].click();", btn_mas)
+                time.sleep(0.2)
             except: pass
 
             textos_internos = bloque.find_elements(By.CLASS_NAME, "sc-59b6826e-0")
-            texto_completo = " | ".join([t.text for t in textos_internos if len(t.text) > 2])
+            # Unimos todo el contenido de la reseña en una sola cadena
+            texto_bruto = " ".join([t.text for t in textos_internos if len(t.text) > 1])
             
-            if texto_completo:
-                # Guardamos el texto y la URL para saber a qué producto pertenece
-                todas_las_resenas.append({
-                    "Producto_URL": url,
-                    "Reseña": texto_completo
-                })
+            # Limpiamos el texto para que no rompa el CSV
+            texto_limpio = limpiar_texto(texto_bruto)
+            
+            if texto_limpio:
+                solo_textos.append(texto_limpio)
 
-    # --- GUARDAR RESULTADOS FINALES ---
-    if todas_las_resenas:
-        df = pd.DataFrame(todas_las_resenas)
-        df.to_csv("scraping_mediamarkt_multiple.csv", index=False, encoding="utf-8-sig")
-        print(f"\n✨ ¡FINALIZADO! Se han guardado {len(todas_las_resenas)} reseñas totales en 'scraping_mediamarkt_multiple.csv'.")
+    # --- GUARDAR RESULTADOS ---
+    if solo_textos:
+        # Convertimos a DataFrame y guardamos
+        df = pd.DataFrame(solo_textos, columns=["Reseña"])
+        # Usamos quoting=1 (QUOTE_ALL) para asegurar que el texto vaya entre comillas
+        df.to_csv("comentarios_limpios.csv", index=False, encoding="utf-8-sig", quoting=1)
+        print(f"\n Se guardaron {len(solo_textos)} reseñas en 'comentarios_limpios.csv'.")
     else:
-        print("\n❌ No se extrajo ninguna reseña de la lista de productos.")
+        print("\n No se encontraron reseñas.")
 
 finally:
     driver.quit()
