@@ -70,7 +70,7 @@ try:
         # Convertimos a DataFrame y guardamos
         df = pd.DataFrame(solo_textos, columns=["Reseña"])
         # Usamos quoting=1 (QUOTE_ALL) para asegurar que el texto vaya entre comillas
-        df.to_csv("comentarios_limpios.csv", index=False, encoding="utf-8-sig", quoting=1)
+        df.to_csv("comentarios.csv", index=False, encoding="utf-8-sig", quoting=1)
         print(f"\n Se guardaron {len(solo_textos)} reseñas en 'comentarios_limpios.csv'.")
     else:
         print("\n No se encontraron reseñas.")
