@@ -2,12 +2,17 @@ import requests
 from bs4 import BeautifulSoup
 import json
 import time
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from deep_translator import GoogleTranslator
+
+try:
+    from deep_translator import GoogleTranslator
+except Exception:
+    GoogleTranslator = None
 
 class LiquipediaTransfersScraper:
     def __init__(self):
@@ -18,7 +23,13 @@ class LiquipediaTransfersScraper:
         
         self.driver = webdriver.Chrome(options=options)
         self.wait = WebDriverWait(self.driver, 15) # Más tiempo de espera
-        self.translator = GoogleTranslator(source='auto', target='es')
+        if GoogleTranslator is not None:
+            try:
+                self.translator = GoogleTranslator(source='auto', target='es')
+            except Exception:
+                self.translator = None
+        else:
+            self.translator = None
         
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -96,8 +107,111 @@ class LiquipediaTransfersScraper:
 
     def traducir(self, texto):
         if not texto: return None
+        if self.translator is None:
+            return texto
         try: return self.translator.translate(texto)
         except: return texto
+
+    def _extract_title(self, soup):
+        heading = soup.find("h1", id="firstHeading")
+        if heading and heading.get_text(strip=True):
+            return heading.get_text(strip=True)
+        title = soup.find("title")
+        if title and title.get_text(strip=True):
+            return title.get_text(strip=True).split("-")[0].strip()
+        return "Unknown"
+
+    def _extract_infobox(self, soup):
+        infobox = {}
+        table = soup.find("table", class_=lambda c: c and "infobox" in c)
+        if not table:
+            return infobox
+
+        for row in table.find_all("tr"):
+            key_el = row.find("th")
+            val_el = row.find("td")
+            if not key_el or not val_el:
+                continue
+            key = key_el.get_text(" ", strip=True)
+            val = val_el.get_text(" ", strip=True)
+            if key and val:
+                infobox[key] = val
+        return infobox
+
+    def _extract_full_text(self, soup):
+        root = soup.find("div", id="mw-content-text") or soup.find("body")
+        if not root:
+            return ""
+
+        # Eliminamos elementos que normalmente añaden ruido.
+        for bad in root.select("table.navbox, table.infobox, script, style"):
+            bad.decompose()
+
+        text = root.get_text(" ", strip=True)
+        return " ".join(text.split())
+
+    def _extract_external_references(self, soup):
+        refs = []
+        root = soup.find("div", id="mw-content-text") or soup.find("body")
+        if not root:
+            return refs
+        for a in root.select("a.external.text"):
+            href = a.get("href", "")
+            if href.startswith("http") and "liquipedia.net" not in href:
+                refs.append({"label": a.get_text(strip=True) or "Fuente", "url": href})
+        # deduplicado por URL conservando orden
+        seen = set()
+        uniq = []
+        for ref in refs:
+            if ref["url"] in seen:
+                continue
+            seen.add(ref["url"])
+            uniq.append(ref)
+        return uniq
+
+    def scrape_team_page(self, url):
+        """Extrae información de una página de equipo en Liquipedia."""
+        soup = self.get_soup(url)
+        if not soup:
+            return None
+
+        full_text = self._extract_full_text(soup)
+        infobox = self._extract_infobox(soup)
+        name = self._extract_title(soup)
+        external_refs = self._extract_external_references(soup)
+
+        return {
+            "type": "team",
+            "url": url,
+            "name": name,
+            "infobox": infobox,
+            "full_text": full_text,
+            "external_references": external_refs,
+            "extracted_at": datetime.now().isoformat(),
+            "combined_text": f"{name}. {full_text}",
+        }
+
+    def scrape_player_page(self, url):
+        """Extrae información de una página de jugador en Liquipedia."""
+        soup = self.get_soup(url)
+        if not soup:
+            return None
+
+        full_text = self._extract_full_text(soup)
+        info = self._extract_infobox(soup)
+        name = self._extract_title(soup)
+        external_refs = self._extract_external_references(soup)
+
+        return {
+            "type": "player",
+            "url": url,
+            "name": name,
+            "info": info,
+            "full_text": full_text,
+            "external_references": external_refs,
+            "extracted_at": datetime.now().isoformat(),
+            "combined_text": f"{name}. {full_text}",
+        }
 
     def run(self, config):
         all_data = []

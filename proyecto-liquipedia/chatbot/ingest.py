@@ -3,6 +3,7 @@ Pipeline de ingesta de datos para el chatbot RAG
 Extrae datos de Liquipedia y los ingesta en el vector store
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -21,6 +22,80 @@ try:
 except Exception:
     GoogleTranslator = None
     _HAS_TRANSLATOR = False
+
+
+DEFAULT_TEAM_URLS = [
+    # Counter-Strike
+    "https://liquipedia.net/counterstrike/G2_Esports",
+    "https://liquipedia.net/counterstrike/FaZe_Clan",
+    "https://liquipedia.net/counterstrike/Natus_Vincere",
+    "https://liquipedia.net/counterstrike/Team_Vitality",
+    "https://liquipedia.net/counterstrike/MOUZ",
+    "https://liquipedia.net/counterstrike/Team_Spirit",
+    "https://liquipedia.net/counterstrike/Complexity_Gaming",
+    "https://liquipedia.net/counterstrike/FNATIC",
+    "https://liquipedia.net/counterstrike/Cloud9",
+    "https://liquipedia.net/counterstrike/HEROIC",
+    # VALORANT
+    "https://liquipedia.net/valorant/Fnatic",
+    "https://liquipedia.net/valorant/Sentinels",
+    "https://liquipedia.net/valorant/Paper_Rex",
+    "https://liquipedia.net/valorant/Team_Heretics",
+    "https://liquipedia.net/valorant/Gen.G_Esports",
+    "https://liquipedia.net/valorant/DRX",
+    "https://liquipedia.net/valorant/LOUD",
+    "https://liquipedia.net/valorant/Leviat%C3%A1n",
+    "https://liquipedia.net/valorant/100_Thieves",
+    "https://liquipedia.net/valorant/FUT_Esports",
+]
+
+DEFAULT_PLAYER_URLS = [
+    # Counter-Strike
+    "https://liquipedia.net/counterstrike/NiKo",
+    "https://liquipedia.net/counterstrike/m0NESY",
+    "https://liquipedia.net/counterstrike/ZywOo",
+    "https://liquipedia.net/counterstrike/donk",
+    "https://liquipedia.net/counterstrike/s1mple",
+    "https://liquipedia.net/counterstrike/device",
+    # VALORANT
+    "https://liquipedia.net/valorant/Boaster",
+    "https://liquipedia.net/valorant/Derke",
+    "https://liquipedia.net/valorant/tenz",
+    "https://liquipedia.net/valorant/Zekken",
+    "https://liquipedia.net/valorant/Mako",
+    "https://liquipedia.net/valorant/aspas",
+]
+
+
+def dedupe_urls(urls: list) -> list:
+    """Deduplica URLs manteniendo orden de aparición."""
+    seen = set()
+    result = []
+    for url in urls:
+        if not url or not isinstance(url, str):
+            continue
+        if url in seen:
+            continue
+        seen.add(url)
+        result.append(url)
+    return result
+
+
+def load_sources_file(file_path: str) -> tuple[list, list]:
+    """Carga equipos y jugadores desde un JSON externo.
+
+    Formato esperado:
+    {
+      "teams": ["https://...", "https://..."],
+      "players": ["https://...", "https://..."]
+    }
+    """
+    with open(file_path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+
+    teams = payload.get("teams", [])
+    players = payload.get("players", [])
+    return dedupe_urls(teams), dedupe_urls(players)
 
 
 class DataIngestionPipeline:
@@ -216,6 +291,30 @@ class DataIngestionPipeline:
                 }
             )
 
+            # Para secciones largas, crear chunks adicionales para no perder detalle.
+            if len(value) > 1400:
+                chunk_size = 1200
+                overlap = 180
+                start = 0
+                chunk_idx = 0
+                while start < len(value):
+                    end = min(len(value), start + chunk_size)
+                    chunk = value[start:end]
+                    add_document(
+                        f"{key.replace('_', ' ').title()} (chunk {chunk_idx + 1}): {chunk}",
+                        {
+                            'name': name,
+                            'type': data_type,
+                            'url': data.get('url'),
+                            'kind': f"{key}_chunk",
+                            'chunk_index': chunk_idx,
+                        }
+                    )
+                    if end >= len(value):
+                        break
+                    start = max(end - overlap, start + 1)
+                    chunk_idx += 1
+
         return documents
     
     def ingest_batch(self, team_urls: list = None, player_urls: list = None):
@@ -301,20 +400,35 @@ def main():
                        help='URLs de equipos a extraer')
     parser.add_argument('--players', '-p', type=str, nargs='+',
                        help='URLs de jugadores a extraer')
+    parser.add_argument('--sources-file', type=str,
+                       help='JSON con listas de teams/players para ingesta masiva')
+    parser.add_argument('--max-teams', type=int, default=None,
+                       help='Limita cuántos equipos se procesan')
+    parser.add_argument('--max-players', type=int, default=None,
+                       help='Limita cuántos jugadores se procesan')
     
     args = parser.parse_args()
     
     pipeline = DataIngestionPipeline()
     
     try:
-        team_urls = args.teams if args.teams else [
-            "https://liquipedia.net/counterstrike/G2_Esports",
-            "https://liquipedia.net/counterstrike/FaZe_Clan",
-        ]
-        
-        player_urls = args.players if args.players else [
-            "https://liquipedia.net/counterstrike/NiKo",
-        ]
+        if args.sources_file:
+            file_teams, file_players = load_sources_file(args.sources_file)
+        else:
+            file_teams, file_players = [], []
+
+        team_urls = args.teams if args.teams else (file_teams if file_teams else DEFAULT_TEAM_URLS)
+        player_urls = args.players if args.players else (file_players if file_players else DEFAULT_PLAYER_URLS)
+
+        team_urls = dedupe_urls(team_urls)
+        player_urls = dedupe_urls(player_urls)
+
+        if args.max_teams is not None:
+            team_urls = team_urls[: max(0, args.max_teams)]
+        if args.max_players is not None:
+            player_urls = player_urls[: max(0, args.max_players)]
+
+        print(f"\nSe procesarán {len(team_urls)} equipos y {len(player_urls)} jugadores.")
         
         docs = pipeline.ingest_batch(team_urls, player_urls)
         print("\n✅ Scraping e ingesta completados.")
