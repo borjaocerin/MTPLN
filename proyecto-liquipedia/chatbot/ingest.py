@@ -174,10 +174,10 @@ class DataIngestionPipeline:
         team_data = self.scraper.scrape_team_page(url)
         
         if not team_data:
-            print(f"  ✗ Error al extraer {url}")
+            print(f"  [!] Error al extraer {url}")
             return None
         
-        print(f"  ✓ {team_data.get('name')} - OK")
+        print(f"  [OK] {team_data.get('name')}")
         return team_data
     
     def extract_player_data(self, url: str) -> dict:
@@ -194,10 +194,10 @@ class DataIngestionPipeline:
         player_data = self.scraper.scrape_player_page(url)
         
         if not player_data:
-            print(f"  ✗ Error al extraer {url}")
+            print(f"  [!] Error al extraer {url}")
             return None
         
-        print(f"  ✓ {player_data.get('name')} - OK")
+        print(f"  [OK] {player_data.get('name')}")
         return player_data
     
     def convert_to_documents(self, data: dict, data_type: str) -> list:
@@ -344,7 +344,7 @@ class DataIngestionPipeline:
                         import time
                         time.sleep(2)  # Respetar servidor
                 except Exception as e:
-                    print(f"  ✗ Error: {str(e)[:50]}")
+                    print(f"  [ERR] Error: {str(e)[:50]}")
         
         # Extraer jugadores
         if player_urls:
@@ -359,7 +359,7 @@ class DataIngestionPipeline:
                         import time
                         time.sleep(2)  # Respetar servidor
                 except Exception as e:
-                    print(f"  ✗ Error: {str(e)[:50]}")
+                    print(f"  [ERR] Error: {str(e)[:50]}")
         
         # Ingestar en RAG engine
         if all_documents:
@@ -382,7 +382,7 @@ class DataIngestionPipeline:
             except Exception:
                 pass
         
-        print("\n✓ Pipeline completado")
+        print("\n[COMPLETE] Pipeline completado")
         return all_documents
     
     def cleanup(self):
