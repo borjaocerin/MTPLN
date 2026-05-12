@@ -4,3 +4,8 @@ selenium
 pandas
 lxml
 deep-translator
+transformers
+torch
+sentencepiece
+safetensors
+accelerate

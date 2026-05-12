@@ -10,6 +10,8 @@
 pip install -r requirements.txt
 ```
 
+La primera ejecución del chatbot descargará el modelo local Phi-3-mini desde Hugging Face. Si quieres usar otro modelo local, define `LOCAL_LLM_MODEL` antes de arrancar.
+
 ## 3. Ingesta de equipos (30 por defecto)
 ```bash
 python chatbot/ingest.py --sources-file sources_example.json --max-teams 30
@@ -46,6 +48,8 @@ Cleaner (limpieza de texto)
 Translator (Google Translator)
     ↓
 RAG Ingestion (SimplePersistentVectorStore + BM25)
+    ↓
+LLM local Phi-3-mini
     ↓
 Chatbot (consultas)
 ```
