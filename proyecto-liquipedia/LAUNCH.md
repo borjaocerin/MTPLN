@@ -10,22 +10,22 @@
 pip install -r requirements.txt
 ```
 
-## 3. Opción A: Ingesta de equipos (30 por defecto)
+## 3. Ingesta de equipos (30 por defecto)
 ```bash
 python chatbot/ingest.py --sources-file sources_example.json --max-teams 30
 ```
 
-## 4. Opción B: Pipeline completo
+**Alternativa con run_full_pipeline.py:**
 ```bash
-python run_full_pipeline.py
+python run_full_pipeline.py limited --max-teams 30
 ```
 
-## 5. Ejecutar EDA (obligatorio)
+## 4. Ejecutar EDA (obligatorio)
 ```bash
 jupyter nbconvert --to notebook --execute EDA_Analisis.ipynb
 ```
 
-## 6. Iniciar chatbot
+## 5. Iniciar chatbot
 ```bash
 python chatbot/app.py
 ```
