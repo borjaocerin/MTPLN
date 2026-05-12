@@ -296,7 +296,15 @@ class RAGEngine:
         for rank, doc in enumerate(docs, start=1):
             name = doc.metadata.get("name", "Fuente")
             url = doc.metadata.get("url", "")
-            sentences = self._split_sentences(doc.text)
+            
+            # Limpiar artefactos comunes del scraping
+            text = doc.text
+            text = re.sub(r'\[\s*e\s*\]\[\s*h\s*\]', '', text)  # Remover [e][h]
+            text = re.sub(r'Descripción general\s+Resultados\s+Partidos', '', text)
+            text = re.sub(r'Academia\s+\w+\s+\w+\s+Academia', '', text)
+            text = re.sub(r'\s+', ' ', text).strip()
+            
+            sentences = self._split_sentences(text)
             if not sentences:
                 continue
 
@@ -305,12 +313,18 @@ class RAGEngine:
                 key=lambda s: self._sentence_score(s, query_tokens),
                 reverse=True,
             )
-            best = scored[0]
-            if len(best) > 320:
-                best = best[:317] + "..."
+            
+            # Tomar las 2 mejores sentencias y combinarlas
+            best_sentences = [s.strip() for s in scored[:2] if len(s.strip()) > 20]
+            if not best_sentences:
+                continue
+                
+            best = " ".join(best_sentences)
+            if len(best) > 200:
+                best = best[:197] + "..."
 
             source = f"{name}" if not url else f"{name} ({url})"
-            candidate_lines.append(f"{rank}. {best} [Fuente: {source}]")
+            candidate_lines.append(f"{rank}. {best}\n   [Fuente: {source}]")
 
         if not candidate_lines:
             return (
@@ -318,8 +332,8 @@ class RAGEngine:
                 "Intenta con una pregunta más específica."
             )
 
-        intro = "Según la información recuperada de Liquipedia:"
-        return intro + "\n" + "\n".join(candidate_lines[:3])
+        intro = "📚 Según la información recuperada de Liquipedia:\n"
+        return intro + "\n".join(candidate_lines[:2])
 
     def answer_question(self, question: str, top_k: int = 3) -> Dict:
         docs = self.vector_store.search(question, top_k=top_k)
