@@ -14,15 +14,10 @@ try:
 except Exception:
     GoogleTranslator = None
 
-class LiquipediaTransfersScraper:
+class LiquipediaTeamScraper:
     def __init__(self):
-        options = Options()
-        options.add_argument("--headless")
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        
-        self.driver = webdriver.Chrome(options=options)
-        self.wait = WebDriverWait(self.driver, 15) # Más tiempo de espera
+        # No mantener driver persistente; crear uno nuevo para cada URL
+        self.driver = None
         if GoogleTranslator is not None:
             try:
                 self.translator = GoogleTranslator(source='auto', target='es')
@@ -35,21 +30,48 @@ class LiquipediaTransfersScraper:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
 
+    def _create_driver(self):
+        """Crea una nueva instancia de driver."""
+        options = Options()
+        options.add_argument("--headless")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--no-sandbox")
+        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        return webdriver.Chrome(options=options)
+
+    def cleanup(self):
+        """Cierra el navegador si sigue abierto."""
+        if self.driver:
+            try:
+                self.driver.quit()
+            except:
+                pass
+            self.driver = None
+
     def get_soup(self, url):
         """Accede a la página y hace scroll para asegurar que carguen las tablas"""
         print(f"   [!] Abriendo navegador para: {url}")
         try:
+            # Crear driver nuevo para cada URL
+            self.driver = self._create_driver()
+            self.driver.set_page_load_timeout(20)
+            
             self.driver.get(url)
             # Hacer scroll hacia abajo para disparar la carga de elementos dinámicos
             self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
-            time.sleep(3)
+            time.sleep(1)
             self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(5) 
+            time.sleep(1)
             
-            return BeautifulSoup(self.driver.page_source, 'html.parser')
+            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+            return soup
         except Exception as e:
             print(f"   [!] Error al cargar página: {e}")
             return None
+        finally:
+            # Limpiar driver inmediatamente después
+            self.cleanup()
 
     def extract_transfer_references(self, soup):
         """Busca referencias de forma masiva en el cuerpo de la página"""
@@ -191,92 +213,5 @@ class LiquipediaTransfersScraper:
             "combined_text": f"{name}. {full_text}",
         }
 
-    def scrape_player_page(self, url):
-        """Extrae información de una página de jugador en Liquipedia."""
-        soup = self.get_soup(url)
-        if not soup:
-            return None
-
-        full_text = self._extract_full_text(soup)
-        info = self._extract_infobox(soup)
-        name = self._extract_title(soup)
-        external_refs = self._extract_external_references(soup)
-
-        return {
-            "type": "player",
-            "url": url,
-            "name": name,
-            "info": info,
-            "full_text": full_text,
-            "external_references": external_refs,
-            "extracted_at": datetime.now().isoformat(),
-            "combined_text": f"{name}. {full_text}",
-        }
-
-    def run(self, config):
-        all_data = []
-        processed_urls = set()
-        
-        # Lista de meses en inglés como pide Liquipedia
-        meses = [
-            "January", "February", "March", "April", "May", "June", 
-            "July", "August", "September", "October", "November", "December"
-        ]
-
-        for game, years in config.items():
-            for year in years:
-                for mes in meses:
-                    # Construcción de la URL: /Portal:Transfers/2025/January
-                    url = f"https://liquipedia.net/{game}/Player_Transfers/{year}/{mes}"
-                    print(f"\n>> Analizando: {url}")
-                    
-                    soup = self.get_soup(url)
-                    if not soup:
-                        continue
-                        
-                    refs = self.extract_transfer_references(soup)
-                    
-                    if not refs:
-                        print(f"   [!] No hay transferencias registradas para {mes} {year}.")
-                        continue
-
-                    print(f"   Encontradas {len(refs)} fuentes reales en {mes}.")
-
-                    for ref in refs:
-                        if ref['url'] in processed_urls: 
-                            continue
-                            
-                        print(f"   - Scrapeando: {ref['url']}")
-                        content = self.scrape_external_content(ref['url'])
-                        
-                        if content:
-                            all_data.append({
-                                "game": game, 
-                                "year": year, 
-                                "month": mes, # Añadimos el mes al JSON resultante
-                                "url": ref['url'],
-                                "content": content.get("text"),
-                                "content_es": content.get("text_es"),
-                                "date": content.get("date")
-                            })
-                            processed_urls.add(ref['url'])
-                        time.sleep(1) # Respeto entre peticiones de fuentes externas
-                        
-        return all_data
-
 if __name__ == "__main__":
-    # Configuración de búsqueda
-    search_config = {
-        "valorant": [2024, 2025],
-        "counterstrike": [2024, 2025]
-    }
-
-    scraper = LiquipediaTransfersScraper()
-    try:
-        data = scraper.run(search_config)
-        # Guardamos con un nombre descriptivo
-        with open("fichajes_mensuales.json", "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
-        print(f"\n¡Éxito! {len(data)} registros mensuales guardados.")
-    finally:
-        scraper.driver.quit()
+    print("Este módulo se usa desde chatbot/ingest.py.")

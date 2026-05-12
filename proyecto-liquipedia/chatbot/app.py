@@ -36,7 +36,7 @@ class EsportsChatbot:
             return True
 
         print("⚠️  No hay datos guardados en el vector store.")
-        print("   Primero ejecuta: python ingest.py")
+        print("   Primero ejecuta: python chatbot/ingest.py")
         print("   El chatbot no se abrirá hasta que exista contenido guardado.\n")
         self.is_initialized = False
         return False

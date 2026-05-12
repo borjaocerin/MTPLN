@@ -1,33 +1,5 @@
 #!/usr/bin/env python3
-"""
-Script simplificado para ejecutar ingesta masiva y abrir el chatbot.
-
-REQUISITOS DEL PROFESOR CUBIERTOS:
-- ✅ Scraping masivo de múltiples equipos (20+ por defecto)
-- ✅ Scraping masivo de múltiples jugadores (15+ por defecto)
-- ✅ Limpieza de texto integrada
-- ✅ Almacenamiento persistente en JSON
-- ✅ Recuperación con índice invertido (sin deep learning)
-- ✅ Chatbot conversacional interactivo
-- ✅ Historial de conversación guardable
-
-USO:
-
-1) Ingesta RÁPIDA (equipos/jugadores predeterminados):
-   python run_full_pipeline.py quick
-
-2) Ingesta MASIVA desde archivo JSON externo:
-   python run_full_pipeline.py massive --sources-file sources_example.json
-
-3) Ingesta LIMITADA (primeros N equipos/jugadores):
-   python run_full_pipeline.py limited --max-teams 5 --max-players 5
-
-4) Personalizado (especificar URLs directas):
-   python run_full_pipeline.py custom --teams https://liquipedia.net/counterstrike/G2_Esports https://liquipedia.net/counterstrike/FaZe_Clan
-
-5) Abrir solo el chatbot sin reingestar:
-   python run_full_pipeline.py chat
-"""
+"""Script principal para ejecutar la ingesta de equipos y abrir el chatbot."""
 
 import sys
 from pathlib import Path
@@ -39,15 +11,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 def run_quick_ingest():
     """Ingesta con configuración rápida por defecto."""
     print("\n" + "=" * 70)
-    print("INGESTA RÁPIDA: Equipos y Jugadores por Defecto")
+    print("INGESTA RÁPIDA: Equipos por Defecto")
     print("=" * 70)
-    from chatbot.ingest import DataIngestionPipeline, DEFAULT_TEAM_URLS, DEFAULT_PLAYER_URLS
+    from chatbot.ingest import DataIngestionPipeline, DEFAULT_TEAM_URLS
 
     pipeline = DataIngestionPipeline()
     try:
         print(f"\nTeams: {len(DEFAULT_TEAM_URLS)}")
-        print(f"Players: {len(DEFAULT_PLAYER_URLS)}")
-        docs = pipeline.ingest_batch(DEFAULT_TEAM_URLS, DEFAULT_PLAYER_URLS)
+        docs = pipeline.ingest_batch(DEFAULT_TEAM_URLS)
         print(f"\n✅ Documentos ingestados: {len(docs)}")
     finally:
         pipeline.cleanup()
@@ -64,7 +35,7 @@ def run_massive_ingest(sources_file):
     )
 
     try:
-        team_urls, player_urls = load_sources_file(sources_file)
+        team_urls = load_sources_file(sources_file)
     except Exception as e:
         print(f"❌ Error leyendo {sources_file}: {e}")
         return
@@ -72,52 +43,43 @@ def run_massive_ingest(sources_file):
     pipeline = DataIngestionPipeline()
     try:
         print(f"\nTeams: {len(team_urls)}")
-        print(f"Players: {len(player_urls)}")
-        docs = pipeline.ingest_batch(team_urls, player_urls)
+        docs = pipeline.ingest_batch(team_urls)
         print(f"\n✅ Documentos ingestados: {len(docs)}")
     finally:
         pipeline.cleanup()
 
 
-def run_limited_ingest(max_teams, max_players):
+def run_limited_ingest(max_teams):
     """Ingesta limitada (útil para pruebas)."""
     print("\n" + "=" * 70)
-    print("INGESTA LIMITADA: Primeros N equipos/jugadores")
+    print("INGESTA LIMITADA: Primeros N equipos")
     print("=" * 70)
     from chatbot.ingest import (
         DataIngestionPipeline,
         DEFAULT_TEAM_URLS,
-        DEFAULT_PLAYER_URLS,
     )
 
     pipeline = DataIngestionPipeline()
     try:
         teams = DEFAULT_TEAM_URLS[:max_teams] if max_teams else DEFAULT_TEAM_URLS
-        players = (
-            DEFAULT_PLAYER_URLS[:max_players]
-            if max_players
-            else DEFAULT_PLAYER_URLS
-        )
         print(f"\nTeams: {len(teams)}")
-        print(f"Players: {len(players)}")
-        docs = pipeline.ingest_batch(teams, players)
+        docs = pipeline.ingest_batch(teams)
         print(f"\n✅ Documentos ingestados: {len(docs)}")
     finally:
         pipeline.cleanup()
 
 
-def run_custom_ingest(teams, players):
+def run_custom_ingest(teams):
     """Ingesta con URLs personalizadas."""
     print("\n" + "=" * 70)
-    print("INGESTA PERSONALIZADA: URLs específicas")
+    print("INGESTA PERSONALIZADA: URLs de equipos específicas")
     print("=" * 70)
     from chatbot.ingest import DataIngestionPipeline
 
     pipeline = DataIngestionPipeline()
     try:
         print(f"\nTeams: {len(teams)}")
-        print(f"Players: {len(players)}")
-        docs = pipeline.ingest_batch(teams, players)
+        docs = pipeline.ingest_batch(teams)
         print(f"\n✅ Documentos ingestados: {len(docs)}")
     finally:
         pipeline.cleanup()
@@ -161,25 +123,18 @@ def main():
 
     elif mode == "limited":
         max_teams = None
-        max_players = None
 
         if "--max-teams" in sys.argv:
             idx = sys.argv.index("--max-teams")
             if idx + 1 < len(sys.argv):
                 max_teams = int(sys.argv[idx + 1])
 
-        if "--max-players" in sys.argv:
-            idx = sys.argv.index("--max-players")
-            if idx + 1 < len(sys.argv):
-                max_players = int(sys.argv[idx + 1])
-
-        run_limited_ingest(max_teams, max_players)
+        run_limited_ingest(max_teams)
         print("\n🎮 Abriendo chatbot...")
         run_chatbot()
 
     elif mode == "custom":
         teams = []
-        players = []
 
         if "--teams" in sys.argv:
             idx = sys.argv.index("--teams")
@@ -187,17 +142,11 @@ def main():
                 teams.append(sys.argv[idx + 1])
                 idx += 1
 
-        if "--players" in sys.argv:
-            idx = sys.argv.index("--players")
-            while idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith("--"):
-                players.append(sys.argv[idx + 1])
-                idx += 1
-
-        if not teams and not players:
-            print("❌ Requiere --teams y/o --players")
+        if not teams:
+            print("❌ Requiere --teams")
             sys.exit(1)
 
-        run_custom_ingest(teams, players)
+        run_custom_ingest(teams)
         print("\n🎮 Abriendo chatbot...")
         run_chatbot()
 
