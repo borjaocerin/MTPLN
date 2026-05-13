@@ -290,10 +290,15 @@ class RAGEngine:
             "LOCAL_LLM_MODEL",
             "microsoft/Phi-3-mini-4k-instruct",
         )
-        self._load_local_llm()
+        # Skip LLM loading - use context-based responses only
+        self.model = None
+        self.tokenizer = None
+        self.pad_token_id = 0
 
     def _load_local_llm(self) -> None:
         try:
+            from transformers import AutoConfig
+            
             self.tokenizer = AutoTokenizer.from_pretrained(
                 self.llm_model_name,
                 trust_remote_code=True,
@@ -302,12 +307,24 @@ class RAGEngine:
             if self.tokenizer.pad_token_id is None and self.tokenizer.eos_token_id is not None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
             self.pad_token_id = self.tokenizer.pad_token_id or self.tokenizer.eos_token_id or 0
-            self.model = AutoModelForCausalLM.from_pretrained(
+            
+            # Load and fix the config
+            config = AutoConfig.from_pretrained(
                 self.llm_model_name,
                 trust_remote_code=True,
-                torch_dtype=torch.float32,
-                device_map="cpu",
+            )
+            # Remove problematic rope_scaling to avoid compatibility issues
+            if hasattr(config, 'rope_scaling'):
+                config.rope_scaling = None
+            
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.llm_model_name,
+                config=config,
+                trust_remote_code=True,
+                torch_dtype=torch.float16,
+                device_map="auto",
                 low_cpu_mem_usage=True,
+                attn_implementation="eager",
             )
             self.model.eval()
         except Exception as exc:
@@ -589,55 +606,28 @@ class RAGEngine:
         return "\n\n---\n\n".join(blocks)
 
     def _generate_llm_answer(self, question: str, docs: List[RetrievedDoc]) -> str:
-        context = self._format_context(docs)
-        system_prompt = (
-            "Eres un asistente en español especializado en equipos de esports de Liquipedia. "
-            "Responde solo con la información presente en el contexto recuperado. "
-            "Si el contexto no contiene la respuesta, dilo de forma breve y no inventes datos. "
-            "Cuando la pregunta sea sobre fundación, staff, roster o organización, usa el texto del bloque superior de la página y resume con claridad."
-        )
-        user_prompt = (
-            f"Pregunta del usuario: {question}\n\n"
-            f"Contexto recuperado de Liquipedia:\n{context}\n\n"
-            "Responde de forma breve, clara y en español. Incluye solo los datos relevantes."
-        )
-
-        if hasattr(self.tokenizer, "apply_chat_template"):
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
-            prompt = self.tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-            )
-        else:
-            prompt = f"{system_prompt}\n\n{user_prompt}\n\nRespuesta:"
-
-        inputs = self.tokenizer(
-            prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=4096,
-        )
-
-        with torch.inference_mode():
-            generated = self.model.generate(
-                **inputs,
-                max_new_tokens=220,
-                do_sample=True,
-                temperature=0.2,
-                top_p=0.9,
-                repetition_penalty=1.08,
-                pad_token_id=self.pad_token_id,
-                eos_token_id=self.tokenizer.eos_token_id,
-            )
-
-        prompt_length = inputs["input_ids"].shape[-1]
-        new_tokens = generated[0][prompt_length:]
-        content = self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
-        return content or "No pude generar una respuesta válida con el LLM local."
+        """
+        Genera respuesta sin usar LLM (fallback para evitar problemas de caché).
+        Extrae y resume la información directamente del contexto.
+        """
+        if not docs:
+            return "No encontré información sobre esa consulta."
+        
+        # Combinar contextos relevantes
+        context_blocks = []
+        for doc in docs[:3]:  # Usar top 3
+            if doc.text:
+                # Tomar primeras 200 caracteres de cada documento
+                snippet = doc.text[:200].strip()
+                if snippet:
+                    context_blocks.append(snippet)
+        
+        if not context_blocks:
+            return "No hay contexto disponible para responder."
+        
+        # Devolver resumen del contexto
+        response = "\n\n".join([f"• {block}..." for block in context_blocks])
+        return response or "No pude encontrar una respuesta clara."
 
     @staticmethod
     def _sentence_score(sentence: str, query_tokens: List[str]) -> int:
