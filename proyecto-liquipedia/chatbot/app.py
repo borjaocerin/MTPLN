@@ -1,121 +1,186 @@
-"""
-Aplicación del Chatbot RAG para responder preguntas sobre esports.
-
-Este programa no hace scraping al arrancar. Solo carga el vector store
-ya generado por el programa de ingesta y abre el chatbot.
-"""
-
-import json
+import argparse
+import os
 import sys
+import warnings
 from pathlib import Path
 
-# Agregar la raíz del proyecto al path para importar rag/
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+from transformers.utils import logging as hf_logging
 
-from rag.ingestion_pipeline import RAGEngine
+
+DEFAULT_LOCAL_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
+
+# Keep terminal chat output clean (Tú/Bot) by silencing noisy Transformers warnings.
+warnings.filterwarnings("ignore", message=r"Both `max_new_tokens`.*`max_length`.*", module=r"transformers.*")
+hf_logging.set_verbosity_error()
+
+if __package__ in (None, ""):
+    PROJECT_ROOT = Path(__file__).resolve().parents[1]
+    if str(PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(PROJECT_ROOT))
+    from chatbot.ingest import DataIngestionPipeline, DEFAULT_STORE_FILE, DEFAULT_TEAM_URLS, SimplePersistentVectorStore
+else:
+    from .ingest import DataIngestionPipeline, DEFAULT_STORE_FILE, DEFAULT_TEAM_URLS, SimplePersistentVectorStore
 
 
 class EsportsChatbot:
-    """Chatbot conversacional sobre esports."""
+    def __init__(self, model_name: str | None = None, store_path: str | Path | None = None):
+        self.model_name = model_name or os.getenv("LOCAL_LLM_MODEL", DEFAULT_LOCAL_MODEL)
+        self.max_new_tokens = int(os.getenv("LOCAL_MAX_NEW_TOKENS", "64"))
+        self.store_path = Path(store_path) if store_path else DEFAULT_STORE_FILE
+        self.vector_store = SimplePersistentVectorStore.load(self.store_path)
+        self.generator = self._load_generator()
 
-    def __init__(self):
-        self.rag_engine = RAGEngine()
-        self.conversation_history = []
-        self.is_initialized = False
+    def _load_generator(self):
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(self.model_name, trust_remote_code=True)
+            if tokenizer.pad_token_id is None and tokenizer.eos_token is not None:
+                tokenizer.pad_token = tokenizer.eos_token
 
-    def load_persisted_data(self):
-        """Carga el vector store ya generado por el programa de ingesta."""
-        print("\n" + "=" * 70)
-        print("CARGANDO DATOS YA SCRAPEADOS")
-        print("=" * 70)
+            model_kwargs = {"trust_remote_code": True}
+            if torch.cuda.is_available():
+                model_kwargs["torch_dtype"] = torch.float16
+                model_kwargs["device_map"] = "auto"
+            else:
+                model_kwargs["torch_dtype"] = torch.float32
 
-        total_docs = self.rag_engine.vector_store.count()
-        if total_docs > 0:
-            self.is_initialized = True
-            print(f"✓ {total_docs} documentos cargados desde disco\n")
+            try:
+                model = AutoModelForCausalLM.from_pretrained(self.model_name, **model_kwargs)
+            except Exception:
+                # Fallback path for models that fail with trust_remote_code/custom kwargs.
+                fallback_kwargs = dict(model_kwargs)
+                fallback_kwargs.pop("trust_remote_code", None)
+                model = AutoModelForCausalLM.from_pretrained(self.model_name, **fallback_kwargs)
+
+            model.config.use_cache = False
+            model.generation_config.max_new_tokens = self.max_new_tokens
+            model.generation_config.max_length = None
+            if model.generation_config.pad_token_id is None and tokenizer.eos_token_id is not None:
+                model.generation_config.pad_token_id = tokenizer.eos_token_id
+
+            if torch.cuda.is_available():
+                return pipeline(
+                    "text-generation",
+                    model=model,
+                    tokenizer=tokenizer,
+                )
+
+            return pipeline(
+                "text-generation",
+                model=model,
+                tokenizer=tokenizer,
+                device=-1,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                f"No se pudo cargar el modelo de Hugging Face '{self.model_name}': {exc}"
+            ) from exc
+
+    def load_persisted_data(self) -> bool:
+        if self.vector_store.documents:
             return True
 
-        print("⚠️  No hay datos guardados en el vector store.")
-        print("   Primero ejecuta: python chatbot/ingest.py")
-        print("   El chatbot no se abrirá hasta que exista contenido guardado.\n")
-        self.is_initialized = False
-        return False
-    
-    def chat(self, user_input: str) -> str:
-        """
-        Procesa entrada del usuario y retorna respuesta.
-        
-        Args:
-            user_input: Pregunta del usuario
-            
-        Returns:
-            Respuesta del chatbot
-        """
-        if not self.is_initialized:
-            return "El chatbot no está inicializado. Primero ejecuta el programa de ingesta."
-        
-        # Agregar a historial
-        self.conversation_history.append({
-            'user': user_input,
-            'timestamp': __import__('datetime').datetime.now().isoformat()
-        })
-        
-        # Generar respuesta usando RAG
-        result = self.rag_engine.answer_question(user_input)
-        
-        # Agregar respuesta a historial
-        self.conversation_history[-1]['bot'] = result['response']
-        
-        return result['response']
-    
-    def run_interactive(self):
-        """Inicia el chatbot en modo conversacional interactivo."""
-        print("\n" + "=" * 70)
-        print("CHATBOT RAG - ESPORTS")
-        print("=" * 70)
-        print("\nEscribe 'salir', 'exit' o 'quit' para terminar.\n")
-        
+        if not self.store_path.exists():
+            pipeline_ingest = DataIngestionPipeline()
+            pipeline_ingest.ingest_batch(DEFAULT_TEAM_URLS)
+
+        self.vector_store = SimplePersistentVectorStore.load(self.store_path)
+        return bool(self.vector_store.documents)
+
+    def _build_prompt(self, question: str, context_docs: list[dict]) -> str:
+        context_lines = []
+        for index, doc in enumerate(context_docs, start=1):
+            context_lines.append(f"[{index}] {doc['name']} ({doc['url']}): {doc['text'][:900]}")
+
+        context = "\n\n".join(context_lines) if context_lines else "No hay contexto disponible."
+        return (
+            "Eres un asistente en español sobre equipos de Counter-Strike y su historial en Liquipedia. "
+            "Responde solo con información apoyada en el contexto. Si no hay suficiente evidencia, dilo claramente.\n\n"
+            f"Contexto:\n{context}\n\n"
+            f"Pregunta: {question}\n"
+            "Respuesta:"
+        )
+
+    def answer(self, question: str) -> str:
+        if self.generator is None:
+            raise RuntimeError("El modelo local no está disponible; no se puede responder sin LLM.")
+
+        context_docs = self.vector_store.search(question, top_k=4)
+        prompt = self._build_prompt(question, context_docs)
+
+        try:
+            tokenizer = self.generator.tokenizer
+            if getattr(tokenizer, "chat_template", None):
+                messages = [
+                    {
+                        "role": "system",
+                        "content": "Eres un asistente útil que responde sobre equipos de Counter-Strike en español.",
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    },
+                ]
+                prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
+            result = self.generator(
+                prompt,
+                max_new_tokens=self.max_new_tokens,
+                max_length=None,
+                return_full_text=False,
+            )
+
+            if isinstance(result, list) and result:
+                generated_text = result[0].get("generated_text", "")
+                if generated_text.strip():
+                    return generated_text.strip()
+        except Exception as exc:
+            raise RuntimeError(f"Falló la generación con el modelo local: {exc}") from exc
+
+        raise RuntimeError("El modelo local no devolvió una respuesta válida.")
+
+    def run_interactive(self) -> None:
+        print("Chatbot listo. Escribe 'salir' para terminar.\n")
         while True:
             try:
-                user_input = input("Tú: ").strip()
-                
-                if not user_input:
-                    continue
-                
-                if user_input.lower() in ['salir', 'exit', 'quit']:
-                    print("\n✅ ¡Hasta luego!\n")
-                    break
-                
-                print("\n🔄 Procesando...\n")
-                response = self.chat(user_input)
-                print(f"Bot: {response}\n")
-                
-            except KeyboardInterrupt:
-                print("\n\n✅ ¡Hasta luego!\n")
+                question = input("Tú: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\nSaliendo...")
                 break
-            except Exception as e:
-                print(f"\n❌ Error: {e}\n")
-    
-    def save_conversation(self, filename: str = "conversation.json"):
-        """Guarda el historial de conversación"""
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(self.conversation_history, f, ensure_ascii=False, indent=2)
-        print(f"✓ Conversación guardada en {filename}")
+
+            if not question:
+                continue
+            if question.lower() in {"salir", "exit", "quit"}:
+                break
+
+            answer = self.answer(question)
+            print(f"Bot: {answer}\n")
 
 
-def main():
-    """Función principal: abre el chatbot con datos ya scrapeados."""
-    try:
-        chatbot = EsportsChatbot()
-        if chatbot.load_persisted_data():
-            chatbot.run_interactive()
-    except KeyboardInterrupt:
-        print("\n\nChatbot cerrado\n")
-    except Exception as e:
-        print(f"\nError fatal: {e}\n")
-        import traceback
-        traceback.print_exc()
+def _ensure_store() -> None:
+    if DEFAULT_STORE_FILE.exists():
+        return
+    pipeline_ingest = DataIngestionPipeline()
+    pipeline_ingest.ingest_batch(DEFAULT_TEAM_URLS)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Chatbot RAG sobre equipos de Counter-Strike.")
+    parser.add_argument("--model", default=os.getenv("LOCAL_LLM_MODEL", DEFAULT_LOCAL_MODEL))
+    parser.add_argument("--store", default=str(DEFAULT_STORE_FILE))
+    args = parser.parse_args()
+
+    _ensure_store()
+
+    chatbot = EsportsChatbot(model_name=args.model, store_path=args.store)
+    if not chatbot.load_persisted_data():
+        print("No hay datos persistidos disponibles para el chatbot.")
+        return 1
+
+    chatbot.run_interactive()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

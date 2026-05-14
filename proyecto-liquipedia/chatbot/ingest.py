@@ -1,329 +1,231 @@
-"""
-Pipeline de ingesta de datos para el chatbot RAG
-Extrae datos de Liquipedia y los ingesta en el vector store
-"""
-
 import json
+import math
+import re
 import sys
-import time
+from collections import Counter, defaultdict
 from pathlib import Path
+from typing import Sequence
 
-# Agregar la raíz del proyecto al path para importar scraper/ y rag/
-sys.path.insert(0, str(Path(__file__).parent.parent))
+if __package__ in (None, ""):
+    PROJECT_ROOT = Path(__file__).resolve().parents[1]
+    if str(PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(PROJECT_ROOT))
 
-from scraper.main_scraper import LiquipediaTeamScraper
 from scraper.cleaner import TextCleaner, validate_text_quality
-from rag.ingestion_pipeline import RAGEngine
 
-# Intentar usar deep-translator para traducir al español. Si no está disponible,
-# usamos un fallback que devuelve el texto original.
-try:
-    from deep_translator import GoogleTranslator
-    _HAS_TRANSLATOR = True
-except Exception:
-    GoogleTranslator = None
-    _HAS_TRANSLATOR = False
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_DATA_FILE = PROJECT_ROOT / "data" / "latest_ingest.json"
+DEFAULT_STORE_FILE = Path(__file__).resolve().parent / "data" / "vector_store" / "store.json"
 
 
-DEFAULT_TEAM_URLS = [
-    "https://liquipedia.net/counterstrike/G2_Esports",
-    "https://liquipedia.net/counterstrike/FaZe_Clan",
-    "https://liquipedia.net/counterstrike/Natus_Vincere",
-    "https://liquipedia.net/counterstrike/Team_Vitality",
-    "https://liquipedia.net/counterstrike/MOUZ",
-    "https://liquipedia.net/counterstrike/Team_Spirit",
-    "https://liquipedia.net/counterstrike/Complexity_Gaming",
-    "https://liquipedia.net/counterstrike/FNATIC",
-    "https://liquipedia.net/counterstrike/Cloud9",
-    "https://liquipedia.net/counterstrike/HEROIC",
-    "https://liquipedia.net/counterstrike/OG",
-    "https://liquipedia.net/counterstrike/Liquid",
-    "https://liquipedia.net/counterstrike/BIG",
-    "https://liquipedia.net/counterstrike/ENCE",
-    "https://liquipedia.net/counterstrike/TheMongolz",
-    "https://liquipedia.net/counterstrike/Imperial_Esports",
-    "https://liquipedia.net/counterstrike/Falcons",
-    "https://liquipedia.net/counterstrike/Outsiders",
-    "https://liquipedia.net/counterstrike/Monte",
-    "https://liquipedia.net/counterstrike/Astralis",
-]
+def _load_default_team_urls() -> list[str]:
+    sources_file = PROJECT_ROOT / "sources_example.json"
+    if not sources_file.exists():
+        return []
+
+    try:
+        with sources_file.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        return []
+
+    teams = payload.get("teams", [])
+    return [team for team in teams if isinstance(team, str)]
 
 
-def dedupe_urls(urls: list) -> list:
-    """Deduplica URLs manteniendo orden de aparición."""
-    seen = set()
-    result = []
-    for url in urls:
-        if not url or not isinstance(url, str):
-            continue
-        if url in seen:
-            continue
-        seen.add(url)
-        result.append(url)
-    return result
+DEFAULT_TEAM_URLS = _load_default_team_urls()
 
 
-def load_sources_file(file_path: str) -> list:
-    """Carga equipos desde un JSON externo."""
-    with open(file_path, "r", encoding="utf-8") as f:
-        payload = json.load(f)
+def load_sources_file(sources_file: str | Path) -> list[str]:
+    with Path(sources_file).open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
 
-    teams = payload.get("teams", []) if isinstance(payload, dict) else payload
-    return dedupe_urls(teams)
+    teams = payload.get("teams", [])
+    if not isinstance(teams, list):
+        raise ValueError("El archivo de fuentes debe contener una lista 'teams'.")
+    return [team for team in teams if isinstance(team, str)]
+
+
+def _tokenize(text: str) -> list[str]:
+    return re.findall(r"[\wáéíóúñü]+", text.lower(), flags=re.UNICODE)
+
+
+class SimplePersistentVectorStore:
+    def __init__(self, documents: list[dict] | None = None):
+        self.documents: list[dict] = documents or []
+        self._avg_doc_len = 0.0
+        self._document_frequency: dict[str, int] = {}
+        self._refresh_statistics()
+
+    def _refresh_statistics(self) -> None:
+        total_length = 0
+        document_frequency = defaultdict(int)
+
+        for document in self.documents:
+            tokens = document.get("tokens", [])
+            total_length += len(tokens)
+            for token in set(tokens):
+                document_frequency[token] += 1
+
+        self._avg_doc_len = (total_length / len(self.documents)) if self.documents else 0.0
+        self._document_frequency = dict(document_frequency)
+
+    @classmethod
+    def load(cls, path: str | Path) -> "SimplePersistentVectorStore":
+        path = Path(path)
+        if not path.exists():
+            return cls([])
+
+        with path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+
+        documents = payload.get("documents", [])
+        for document in documents:
+            counts = document.get("term_counts", {})
+            if isinstance(counts, dict):
+                document["term_counts"] = {str(token): int(count) for token, count in counts.items()}
+            document["tokens"] = [str(token) for token in document.get("tokens", [])]
+
+        return cls(documents)
+
+    def save(self, path: str | Path) -> None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        payload = {
+            "documents": self.documents,
+            "document_count": len(self.documents),
+            "avg_doc_len": self._avg_doc_len,
+            "document_frequency": self._document_frequency,
+        }
+
+        with path.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+    def add_documents(self, documents: Sequence[dict]) -> None:
+        for document in documents:
+            text = document.get("clean_text") or document.get("text") or document.get("full_text") or ""
+            tokens = _tokenize(text)
+            prepared = dict(document)
+            prepared["text"] = text
+            prepared["tokens"] = tokens
+            prepared["term_counts"] = dict(Counter(tokens))
+            prepared["token_count"] = len(tokens)
+            self.documents.append(prepared)
+
+        self._refresh_statistics()
+
+    def search(self, query: str, top_k: int = 4) -> list[dict]:
+        query_tokens = _tokenize(query)
+        if not query_tokens or not self.documents:
+            return []
+
+        scores: list[tuple[float, dict]] = []
+        total_documents = len(self.documents)
+        k1 = 1.5
+        b = 0.75
+
+        for document in self.documents:
+            counts = document.get("term_counts", {})
+            doc_len = max(int(document.get("token_count", len(document.get("tokens", [])))), 1)
+            score = 0.0
+            for token in query_tokens:
+                tf = int(counts.get(token, 0))
+                if tf == 0:
+                    continue
+                df = self._document_frequency.get(token, 0)
+                if df == 0:
+                    continue
+                idf = math.log(1 + ((total_documents - df + 0.5) / (df + 0.5)))
+                numerator = tf * (k1 + 1)
+                denominator = tf + k1 * (1 - b + b * doc_len / max(self._avg_doc_len, 1.0))
+                score += idf * (numerator / denominator)
+
+            if score > 0:
+                scores.append((score, document))
+
+        scores.sort(key=lambda item: item[0], reverse=True)
+        ranked = []
+        for score, document in scores[:top_k]:
+            ranked.append(
+                {
+                    "score": score,
+                    "name": document.get("name") or document.get("metadata", {}).get("name") or "Desconocido",
+                    "url": document.get("url") or document.get("metadata", {}).get("url") or "",
+                    "text": document.get("text", ""),
+                    "metadata": document.get("metadata", {}),
+                }
+            )
+        return ranked
 
 
 class DataIngestionPipeline:
-    """Pipeline para ingestar datos de Liquipedia en el chatbot"""
-    
-    def __init__(self):
-        self.scraper = LiquipediaTeamScraper()
+    def __init__(self, data_file: str | Path | None = None, store_file: str | Path | None = None):
+        self.data_file = Path(data_file) if data_file else DEFAULT_DATA_FILE
+        self.store_file = Path(store_file) if store_file else DEFAULT_STORE_FILE
         self.cleaner = TextCleaner()
-        self.rag_engine = RAGEngine()
-        self.ingested_docs = []
-        # Configuración de traducción
-        self.translator_available = _HAS_TRANSLATOR
-        if self.translator_available:
-            try:
-                # Inicializar traductor a español
-                self.translator = GoogleTranslator(source='auto', target='es')
-            except Exception:
-                self.translator_available = False
-                self.translator = None
+
+    def _load_records_from_file(self, file_path: str | Path) -> list[dict]:
+        with Path(file_path).open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+
+        if isinstance(payload, dict):
+            records = payload.get("documents", []) or payload.get("items", [])
         else:
-            self.translator = None
+            records = payload
 
-    def translate_text(self, text: str) -> str:
-        """
-        Traduce `text` al español si el traductor está disponible.
-        Si falla, devuelve el texto original.
-        """
-        if not text:
-            return text
-        if not self.translator_available or self.translator is None:
-            return text
-        try:
-            # Dividir por párrafos y luego en trozos de tamaño limitado
-            # para forzar traducción cuando el texto viene en una sola línea.
-            parts = [p for p in text.split('\n\n') if p.strip()]
-            if not parts:
-                parts = [text]
+        if not isinstance(records, list):
+            raise ValueError("El archivo de ingestión no contiene una lista válida de registros.")
+        return [record for record in records if isinstance(record, dict)]
 
-            max_chunk = 1000
-            translated_parts = []
-            for p in parts:
-                if len(p) <= max_chunk:
-                    try:
-                        t = self.translator.translate(p)
-                    except Exception:
-                        t = p
-                    translated_parts.append(t)
-                    continue
-
-                # dividir en trozos más pequeños
-                chunks = [p[i:i+max_chunk] for i in range(0, len(p), max_chunk)]
-                translated_chunks = []
-                for c in chunks:
-                    try:
-                        tc = self.translator.translate(c)
-                    except Exception:
-                        tc = c
-                    translated_chunks.append(tc)
-                translated_parts.append(''.join(translated_chunks))
-
-            return '\n\n'.join(translated_parts)
-        except Exception:
-            return text
-    
-    def extract_team_data(self, url: str) -> dict:
-        """
-        Extrae datos de equipo de Liquipedia.
-        
-        Args:
-            url: URL del equipo en Liquipedia
-            
-        Returns:
-            Datos del equipo p
-        """
-        print(f"Extrayendo equipo: {url}")
-        team_data = self.scraper.scrape_team_page(url)
-        
-        if not team_data:
-            print(f"  [!] Error al extraer {url}")
-            return None
-        
-        print(f"  [OK] {team_data.get('name')}")
-        return team_data
-    
-    def convert_to_documents(self, data: dict) -> list:
-        """
-        Convierte datos extraídos a documentos para ingesta.
-        
-        Args:
-            data: Datos extraídos del equipo
-            
-        Returns:
-            Lista de documentos
-        """
-        documents = []
-
-        def add_document(text: str, metadata: dict):
-            clean_text = self.cleaner.clean_text(text)
-            # Traducir al español antes de validar/añadir
-            esp_text = self.translate_text(clean_text)
-            if validate_text_quality(esp_text, min_length=30):
-                # Guardar texto traducido
-                documents.append({
-                    'text': esp_text,
-                    'metadata': metadata
-                })
-
-        name = data.get('name', 'Unknown')
-
-        # 1) Documento combinado principal con toda la información útil
-        combined_parts = []
-
-        if data.get('infobox'):
-            infobox_text = " | ".join([f"{k}: {v}" for k, v in data['infobox'].items()])
-            combined_parts.append(f"INFOBOX: {infobox_text}")
-
-        if data.get('info'):
-            info_text = " | ".join([f"{k}: {v}" for k, v in data['info'].items()])
-            combined_parts.append(f"INFOBOX: {info_text}")
-
-        for key, value in data.items():
-            if not isinstance(value, str):
-                continue
-            if key in {'url', 'type', 'name', 'extracted_at'}:
-                continue
-            if key.endswith('_es'):
-                continue
-            if key in {'combined_text'}:
-                continue
-
-            label = key.replace('_', ' ').upper()
-            combined_parts.append(f"{label}: {value}")
-
-        if data.get('external_references'):
-            ref_lines = []
-            for ref in data['external_references'][:10]:
-                if isinstance(ref, dict):
-                    ref_lines.append(f"{ref.get('label', 'Fuente')}: {ref.get('url', '')}")
-            if ref_lines:
-                combined_parts.append("REFERENCIAS EXTERNAS: " + " | ".join(ref_lines))
-
-        combined_text = "\n\n".join(combined_parts)
-        add_document(
-            combined_text,
-            {
-                'name': name,
-                'type': 'team',
-                'url': data.get('url'),
-                'kind': 'combined',
-            }
+    def _normalize_record(self, record: dict) -> dict | None:
+        raw_text = (
+            record.get("text")
+            or record.get("content")
+            or record.get("combined_text")
+            or record.get("full_text")
+            or ""
         )
+        cleaned_text = self.cleaner.clean_text(raw_text)
+        if not validate_text_quality(cleaned_text, min_length=80):
+            return None
 
-        return documents
-    
-    def ingest_batch(self, team_urls: list = None):
-        """
-        Ingesta múltiples equipos.
-        
-        Args:
-            team_urls: Lista de URLs de equipos
-        """
-        print("\n" + "="*60)
-        print("PIPELINE DE INGESTA")
-        print("="*60)
-        
-        all_documents = []
-        
-        # Extraer equipos
-        if team_urls:
-            print("\n[1/1] Extrayendo equipos...")
-            for url in team_urls:
-                try:
-                    team_data = self.extract_team_data(url)
-                    if team_data:
-                        all_documents.extend(self.convert_to_documents(team_data))
-                        time.sleep(2)
-                except Exception as e:
-                    print(f"  [ERR] Error: {str(e)[:50]}")
-        
-        # Ingestar en RAG engine
-        if all_documents:
-            print(f"\n[2/2] Ingesta en Vector Store...")
-            print(f"  Documentos a ingestar: {len(all_documents)}")
+        metadata = dict(record.get("metadata", {}))
+        metadata.setdefault("name", record.get("name") or metadata.get("name") or "Desconocido")
+        metadata.setdefault("url", record.get("url") or metadata.get("url") or "")
 
-            # Importante: limpiar el índice para evitar mezclar documentos legacy
-            # con la nueva ingesta (causa respuestas fuera de contexto).
-            self.rag_engine.vector_store.clear()
-            self.rag_engine.ingest_documents(all_documents)
-            self.ingested_docs = all_documents
+        return {
+            "name": metadata["name"],
+            "url": metadata["url"],
+            "text": raw_text,
+            "clean_text": cleaned_text,
+            "metadata": metadata,
+        }
 
-            # Guardar un respaldo de los documentos generados para depuración
-            try:
-                backup_path = Path(__file__).parent.parent / 'data'
-                backup_path.mkdir(exist_ok=True)
-                with open(backup_path / 'latest_ingest.json', 'w', encoding='utf-8') as f:
-                    import json
-                    json.dump(all_documents, f, ensure_ascii=False, indent=2)
-            except Exception:
-                pass
-        
-        print("\n[COMPLETE] Pipeline completado")
-        return all_documents
-    
-    def cleanup(self):
-        """Limpia recursos"""
-        if hasattr(self, 'scraper'):
-            if hasattr(self.scraper, 'cleanup'):
-                self.scraper.cleanup()
-            elif hasattr(self.scraper, 'driver'):
-                self.scraper.driver.quit()
+    def _load_local_records(self) -> list[dict]:
+        if self.data_file.exists():
+            return self._load_records_from_file(self.data_file)
+        return []
 
+    def ingest_batch(self, team_urls: Sequence[str] | None = None) -> list[dict]:
+        requested_urls = set(team_urls or [])
+        records = self._load_local_records()
 
-def main():
-    """Función principal"""
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='Pipeline de ingesta para Chatbot')
-    parser.add_argument('--teams', '-t', type=str, nargs='+',
-                       help='URLs de equipos a extraer')
-    parser.add_argument('--sources-file', type=str,
-                       help='JSON con una lista de teams para ingesta masiva')
-    parser.add_argument('--max-teams', type=int, default=None,
-                       help='Limita cuántos equipos se procesan')
-    
-    args = parser.parse_args()
-    
-    pipeline = DataIngestionPipeline()
-    
-    try:
-        if args.sources_file:
-            team_urls = load_sources_file(args.sources_file)
-        else:
-            team_urls = []
+        if requested_urls:
+            filtered = [record for record in records if record.get("url") in requested_urls]
+            if filtered:
+                records = filtered
 
-        if not team_urls:
-            team_urls = args.teams if args.teams else DEFAULT_TEAM_URLS
-        else:
-            team_urls = args.teams if args.teams else team_urls
+        normalized_documents = []
+        for record in records:
+            normalized = self._normalize_record(record)
+            if normalized is not None:
+                normalized_documents.append(normalized)
 
-        team_urls = dedupe_urls(team_urls)
+        store = SimplePersistentVectorStore([])
+        store.add_documents(normalized_documents)
+        store.save(self.store_file)
+        return normalized_documents
 
-        if args.max_teams is not None:
-            team_urls = team_urls[: max(0, args.max_teams)]
-
-        print(f"\nSe procesarán {len(team_urls)} equipos.")
-        
-        docs = pipeline.ingest_batch(team_urls)
-        print("\n✅ Scraping e ingesta completados.")
-        print("   Ahora puedes abrir el chatbot con: python chatbot/app.py")
-        print(f"   Documentos guardados: {len(docs)}")
-    
-    finally:
-        pipeline.cleanup()
-
-
-if __name__ == "__main__":
-    main()
+    def cleanup(self) -> None:
+        return None
