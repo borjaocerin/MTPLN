@@ -1,14 +1,118 @@
 ﻿\chapter{Identificación de Sesgos}
 \label{ch:sesgos}
 
+La construcción de un corpus mediante web scraping de fuentes colaborativas introduce múltiples vectores de sesgo que pueden afectar tanto la representatividad de los datos como el comportamiento del sistema final. En este capítulo se identifican y analizan los principales sesgos detectados en el corpus de equipos de \textit{Counter-Strike}, se cuantifica su impacto y se proponen estrategias de mitigación.
+
 % Tipos de sesgos detectados
 
+\section{Sesgo de Popularidad y Cobertura}
+
+El sesgo más evidente detectado en el corpus es el \textbf{desbalance en la cantidad de información} disponible para cada equipo. Como se observó en el análisis exploratorio (Capítulo~\ref{ch:eda}), existe una variabilidad extrema en la longitud de los documentos: mientras que equipos como Fnatic y Complexity cuentan con aproximadamente 8000-9000 palabras, otros equipos como Imperial Esports o S0tF apenas alcanzan las 2000 palabras. La desviación estándar de 1800 palabras por documento confirma esta distribución altamente desigual.
+
+Este sesgo refleja un fenómeno propio de las wikis colaborativas: los equipos con mayor base de aficionados, historial competitivo más extenso o presencia mediática más activa reciben contribuciones más frecuentes y detalladas. Esto genera dos problemas para el sistema RAG:
+
+\begin{itemize}
+    \item \textbf{Sesgo de recuperación}: Las consultas sobre equipos populares tienen mayor probabilidad de encontrar pasajes relevantes debido al volumen de información disponible.
+    \item \textbf{Sesgo de respuesta}: El modelo puede ofrecer respuestas más completas y contextualizadas para equipos bien documentados, perpetuando la desigualdad informativa.
+\end{itemize}
 
 % Análisis de balance de clases
 
+\section{Sesgo Temporal}
+
+El análisis de frecuencias léxicas revela un marcado \textbf{sesgo hacia información reciente}. Entre las 15 palabras más frecuentes del corpus, ocho corresponden a años: 2025, 2023, 2022, 2026, 2024, 2021, 2019 y 2018. La predominancia de años recientes (2021-2026) indica que la información sobre la historia temprana de los equipos está subrepresentada.
+
+Este sesgo es inherente a la naturaleza de Liquipedia como fuente viva de información: los eventos recientes (fichajes, torneos, cambios de roster) se documentan con mayor detalle que la historia pasada. Como consecuencia, el sistema puede tener dificultades para responder preguntas sobre la trayectoria histórica de equipos fundados hace más de una década, mientras que proporciona información actualizada sobre movimientos recientes.
+
+\section{Sesgo de Fuente Única}
+
+Al depender exclusivamente de Liquipedia como fuente de información, el corpus hereda los sesgos inherentes a esta plataforma:
+
+\begin{itemize}
+    \item \textbf{Sesgo editorial}: La información está filtrada por los criterios de notabilidad y relevancia de la comunidad editora de Liquipedia.
+    \item \textbf{Sesgo de perspectiva}: No se contrastan múltiples fuentes, lo que puede perpetuar errores factuales o interpretaciones sesgadas.
+    \item \textbf{Sesgo de actualización}: Equipos con comunidades más activas mantienen sus páginas actualizadas con mayor frecuencia.
+\end{itemize}
+
+Este sesgo es particularmente crítico en el contexto de un sistema conversacional, ya que el modelo puede presentar información como objetiva cuando en realidad refleja la perspectiva de una comunidad específica.
 
 % Sesgos en la representación de datos
 
+\section{Sesgo Lingüístico por Traducción Automática}
+
+La traducción automática del inglés al español mediante \texttt{deep-translator} introduce sesgos lingüísticos en dos niveles:
+
+\begin{enumerate}
+    \item \textbf{Jerga técnica}: Los términos específicos de esports (\textit{clutch}, \textit{eco round}, \textit{entry fragger}) pueden traducirse incorrectamente o perder matices semánticos al castellano.
+    \item \textbf{Anglicismos preservados}: Muchos términos técnicos se mantienen en inglés en el ámbito hispanohablante de esports, pero el traductor puede intentar castellanizarlos erróneamente.
+    \item \textbf{Calidad variable}: La traducción por chunks de 1000 caracteres puede fragmentar el contexto semántico, afectando la coherencia de las traducciones.
+\end{enumerate}
+
+Este sesgo afecta directamente la experiencia del usuario final, especialmente para hablantes nativos de español familiarizados con la terminología técnica en inglés ampliamente usada en la comunidad hispanohablante de esports.
+
+\section{Sesgo de Selección y Notabilidad}
+
+El corpus se limita a equipos considerados \textbf{notables} por Liquipedia, lo que excluye automáticamente:
+
+\begin{itemize}
+    \item Equipos regionales o semi-profesionales sin proyección internacional
+    \item Organizaciones emergentes sin historial competitivo extenso
+    \item Equipos de regiones con menor presencia en la escena competitiva global
+\end{itemize}
+
+Este sesgo de selección implica que el sistema no puede responder consultas sobre equipos fuera del tier competitivo alto, limitando su utilidad para aficionados interesados en escenas regionales o desarrollo de talentos.
+
+\section{Sesgo Geográfico}
+
+Aunque el corpus no incluye metadatos explícitos sobre la ubicación geográfica de los equipos, es razonable inferir un \textbf{sesgo geográfico} dada la estructura del ecosistema competitivo de \textit{Counter-Strike}. Históricamente, las regiones con mayor presencia en torneos internacionales (Europa, América del Norte, Brasil) reciben mayor cobertura mediática y, por extensión, mayor documentación en Liquipedia.
+
+Este sesgo geográfico puede traducirse en:
+\begin{itemize}
+    \item Menor información sobre equipos asiáticos, oceánicos o de regiones emergentes
+    \item Sobrerrepresentación de equipos europeos y norteamericanos
+    \item Perpetuación de narrativas centradas en las escenas competitivas dominantes
+\end{itemize}
 
 % Estrategias para mitigar sesgos
+
+\section{Estrategias de Mitigación}
+
+Para abordar los sesgos identificados, se proponen las siguientes estrategias:
+
+\subsection{Mitigación del Sesgo de Popularidad}
+
+\begin{itemize}
+    \item \textbf{Normalización de ponderaciones}: Implementar un sistema de penalización por longitud de documento en el algoritmo BM25, evitando que equipos con mayor volumen de información dominen sistemáticamente los resultados de recuperación.
+    \item \textbf{Diversificación de fuentes}: Ampliar el corpus con información de medios especializados (HLTV, VLR.gg) para equilibrar la representación de equipos menos documentados en Liquipedia.
+    \item \textbf{Aumento de datos sintéticos}: Generar resúmenes estructurados para equipos con poca información mediante técnicas de expansión de consultas.
+\end{itemize}
+
+\subsection{Mitigación del Sesgo Temporal}
+
+\begin{itemize}
+    \item \textbf{Extracción temporal explícita}: Añadir metadatos temporales a cada documento para permitir filtrado por rango de fechas.
+    \item \textbf{Prompts contextualizados}: Instruir explícitamente al modelo de lenguaje para que indique cuando la información histórica es limitada.
+    \item \textbf{Recuperación temporal diversa}: Implementar estrategias de \textit{query expansion} que recuperen documentos de múltiples períodos temporales.
+\end{itemize}
+
+\subsection{Mitigación del Sesgo Lingüístico}
+
+\begin{itemize}
+    \item \textbf{Glosario técnico personalizado}: Crear un diccionario de términos técnicos de esports que se preserven sin traducir (e.g., \textit{clutch}, \textit{ace}, \textit{eco}).
+    \item \textbf{Post-procesamiento de traducciones}: Implementar reglas de validación para detectar y corregir traducciones incorrectas de jerga técnica.
+    \item \textbf{Traducción consciente del contexto}: Utilizar modelos de traducción neuronal con mayor contexto (e.g., Transformers con ventanas más amplias) en lugar de traducción por chunks.
+\end{itemize}
+
+\subsection{Transparencia y Comunicación de Limitaciones}
+
+Finalmente, es fundamental comunicar explícitamente al usuario las limitaciones del sistema:
+
+\begin{itemize}
+    \item Incluir disclaimers sobre la fuente única de información (Liquipedia)
+    \item Indicar cuando la información disponible para un equipo es limitada
+    \item Proporcionar enlaces a las fuentes originales para verificación
+    \item Admitir explícitamente cuando no se dispone de información suficiente para responder una consulta
+\end{itemize}
+
+Estas medidas de transparencia no eliminan los sesgos estructurales del corpus, pero permiten a los usuarios interpretar las respuestas del sistema con el contexto adecuado y evitan la percepción de objetividad absoluta.
 
