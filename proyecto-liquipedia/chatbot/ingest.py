@@ -13,6 +13,11 @@ if __package__ in (None, ""):
 
 from scraper.cleaner import TextCleaner, validate_text_quality
 
+try:
+    from scraper.main_scraper import LiquipediaTeamScraper
+except Exception:
+    LiquipediaTeamScraper = None
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_FILE = PROJECT_ROOT / "data" / "latest_ingest.json"
 DEFAULT_STORE_FILE = Path(__file__).resolve().parent / "data" / "vector_store" / "store.json"
@@ -48,6 +53,25 @@ def load_sources_file(sources_file: str | Path) -> list[str]:
 
 def _tokenize(text: str) -> list[str]:
     return re.findall(r"[\wáéíóúñü]+", text.lower(), flags=re.UNICODE)
+
+
+QUERY_EXPANSIONS: dict[str, list[str]] = {
+    "fichaje": ["fichajes", "fichar", "ficha", "adquiere", "transferencia", "roster", "join", "bench"],
+    "fichajes": ["fichaje", "fichar", "ficha", "adquiere", "transferencia", "roster", "join", "bench"],
+    "staff": ["organizacion", "organización", "manager", "coach", "entrenador", "entrenadores", "analista"],
+    "entrenador": ["coach", "staff", "organizacion", "organización"],
+    "torneo": ["torneos", "resultados", "partidos", "logros", "upcoming"],
+    "torneos": ["torneo", "resultados", "partidos", "logros", "upcoming"],
+}
+
+
+def _expand_query_tokens(tokens: list[str]) -> list[str]:
+    expanded: list[str] = []
+    for token in tokens:
+        expanded.append(token)
+        expanded.extend(QUERY_EXPANSIONS.get(token, []))
+    # Deduplicar conservando orden.
+    return list(dict.fromkeys(expanded))
 
 
 class SimplePersistentVectorStore:
@@ -116,7 +140,7 @@ class SimplePersistentVectorStore:
         self._refresh_statistics()
 
     def search(self, query: str, top_k: int = 4) -> list[dict]:
-        query_tokens = _tokenize(query)
+        query_tokens = _expand_query_tokens(_tokenize(query))
         if not query_tokens or not self.documents:
             return []
 
@@ -165,6 +189,10 @@ class DataIngestionPipeline:
         self.store_file = Path(store_file) if store_file else DEFAULT_STORE_FILE
         self.cleaner = TextCleaner()
 
+    def _record_url(self, record: dict) -> str:
+        metadata = record.get("metadata", {}) if isinstance(record.get("metadata"), dict) else {}
+        return str(record.get("url") or metadata.get("url") or "")
+
     def _load_records_from_file(self, file_path: str | Path) -> list[dict]:
         with Path(file_path).open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
@@ -178,7 +206,66 @@ class DataIngestionPipeline:
             raise ValueError("El archivo de ingestión no contiene una lista válida de registros.")
         return [record for record in records if isinstance(record, dict)]
 
-    def _normalize_record(self, record: dict) -> dict | None:
+    def _section_from_heading(self, heading: str) -> str:
+        h = heading.lower()
+        if "organiz" in h or "staff" in h:
+            return "staff_organizacion"
+        if "jugador" in h or "plantilla" in h or "roster" in h:
+            return "jugadores_fichajes"
+        if "resultado" in h or "partido" in h or "logro" in h or "torneo" in h:
+            return "torneos_resultados"
+        if "historia" in h or "cronolog" in h:
+            return "historia_movimientos"
+        if "referencia" in h:
+            return "referencias"
+        return "resumen_equipo"
+
+    def _split_sections(self, raw_text: str) -> list[tuple[str, str]]:
+        text = " ".join((raw_text or "").split())
+        if len(text) < 180:
+            return [("resumen_equipo", text)] if text else []
+
+        heading_pattern = re.compile(
+            r"\b(Próximos torneos|Próximos partidos|Historia|Cronología|Lista de jugadores|Plantilla de jugadores|Organización|Resultados|Partidos recientes|Logros|Referencias)\b",
+            flags=re.IGNORECASE,
+        )
+        matches = list(heading_pattern.finditer(text))
+        if not matches:
+            return [("resumen_equipo", text)]
+
+        sections: list[tuple[str, str]] = []
+        start = 0
+        current_label = "resumen_equipo"
+        for match in matches:
+            if match.start() - start >= 120:
+                sections.append((current_label, text[start:match.start()].strip()))
+            current_label = self._section_from_heading(match.group(1))
+            start = match.start()
+
+        tail = text[start:].strip()
+        if len(tail) >= 120:
+            sections.append((current_label, tail))
+
+        chunked: list[tuple[str, str]] = []
+        max_chars = 1400
+        overlap = 220
+        for label, section_text in sections:
+            if len(section_text) <= max_chars:
+                chunked.append((label, section_text))
+                continue
+
+            cursor = 0
+            while cursor < len(section_text):
+                chunk = section_text[cursor : cursor + max_chars].strip()
+                if len(chunk) >= 120:
+                    chunked.append((label, chunk))
+                if cursor + max_chars >= len(section_text):
+                    break
+                cursor += max_chars - overlap
+
+        return chunked
+
+    def _normalize_record(self, record: dict) -> list[dict]:
         raw_text = (
             record.get("text")
             or record.get("content")
@@ -186,21 +273,74 @@ class DataIngestionPipeline:
             or record.get("full_text")
             or ""
         )
-        cleaned_text = self.cleaner.clean_text(raw_text)
-        if not validate_text_quality(cleaned_text, min_length=80):
-            return None
 
         metadata = dict(record.get("metadata", {}))
         metadata.setdefault("name", record.get("name") or metadata.get("name") or "Desconocido")
         metadata.setdefault("url", record.get("url") or metadata.get("url") or "")
 
-        return {
-            "name": metadata["name"],
-            "url": metadata["url"],
-            "text": raw_text,
-            "clean_text": cleaned_text,
-            "metadata": metadata,
-        }
+        documents: list[dict] = []
+        for chunk_index, (section, section_text) in enumerate(self._split_sections(raw_text), start=1):
+            cleaned_text = self.cleaner.clean_text(section_text)
+            if not validate_text_quality(cleaned_text, min_length=60):
+                continue
+
+            chunk_metadata = dict(metadata)
+            chunk_metadata["section"] = section
+            chunk_metadata["chunk_index"] = chunk_index
+
+            documents.append(
+                {
+                    "name": metadata["name"],
+                    "url": metadata["url"],
+                    "text": section_text,
+                    "clean_text": cleaned_text,
+                    "metadata": chunk_metadata,
+                }
+            )
+
+        if documents:
+            return documents
+
+        cleaned_text = self.cleaner.clean_text(raw_text)
+        if not validate_text_quality(cleaned_text, min_length=60):
+            return []
+
+        fallback_metadata = dict(metadata)
+        fallback_metadata["section"] = "resumen_equipo"
+        fallback_metadata["chunk_index"] = 1
+        return [
+            {
+                "name": metadata["name"],
+                "url": metadata["url"],
+                "text": raw_text,
+                "clean_text": cleaned_text,
+                "metadata": fallback_metadata,
+            }
+        ]
+
+    def _save_records(self, records: Sequence[dict]) -> None:
+        self.data_file.parent.mkdir(parents=True, exist_ok=True)
+        with self.data_file.open("w", encoding="utf-8") as handle:
+            json.dump(list(records), handle, ensure_ascii=False, indent=2)
+
+    def _scrape_missing_records(self, team_urls: Sequence[str]) -> list[dict]:
+        if not team_urls or LiquipediaTeamScraper is None:
+            return []
+
+        scraper = LiquipediaTeamScraper()
+        scraped_records: list[dict] = []
+        try:
+            for url in team_urls:
+                try:
+                    record = scraper.scrape_team_page(url)
+                except Exception:
+                    record = None
+                if record:
+                    scraped_records.append(record)
+        finally:
+            scraper.cleanup()
+
+        return scraped_records
 
     def _load_local_records(self) -> list[dict]:
         if self.data_file.exists():
@@ -212,15 +352,28 @@ class DataIngestionPipeline:
         records = self._load_local_records()
 
         if requested_urls:
-            filtered = [record for record in records if record.get("url") in requested_urls]
+            filtered = [record for record in records if self._record_url(record) in requested_urls]
+            present_urls = {self._record_url(record) for record in filtered if self._record_url(record)}
+            missing_urls = sorted(url for url in requested_urls if url not in present_urls)
+
+            scraped = self._scrape_missing_records(missing_urls)
+            if scraped:
+                by_url = {self._record_url(record): record for record in records if self._record_url(record)}
+                for record in scraped:
+                    record_url = self._record_url(record)
+                    if record_url:
+                        by_url[record_url] = record
+                records = list(by_url.values())
+                self._save_records(records)
+
+                filtered = [record for record in records if self._record_url(record) in requested_urls]
+
             if filtered:
                 records = filtered
 
         normalized_documents = []
         for record in records:
-            normalized = self._normalize_record(record)
-            if normalized is not None:
-                normalized_documents.append(normalized)
+            normalized_documents.extend(self._normalize_record(record))
 
         store = SimplePersistentVectorStore([])
         store.add_documents(normalized_documents)

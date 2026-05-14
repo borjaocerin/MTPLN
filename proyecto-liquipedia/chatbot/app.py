@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 import sys
 import warnings
 from pathlib import Path
@@ -27,7 +28,7 @@ else:
 class EsportsChatbot:
     def __init__(self, model_name: str | None = None, store_path: str | Path | None = None):
         self.model_name = model_name or os.getenv("LOCAL_LLM_MODEL", DEFAULT_LOCAL_MODEL)
-        self.max_new_tokens = int(os.getenv("LOCAL_MAX_NEW_TOKENS", "64"))
+        self.max_new_tokens = int(os.getenv("LOCAL_MAX_NEW_TOKENS", "96"))
         self.store_path = Path(store_path) if store_path else DEFAULT_STORE_FILE
         self.vector_store = SimplePersistentVectorStore.load(self.store_path)
         self.generator = self._load_generator()
@@ -91,7 +92,10 @@ class EsportsChatbot:
     def _build_prompt(self, question: str, context_docs: list[dict]) -> str:
         context_lines = []
         for index, doc in enumerate(context_docs, start=1):
-            context_lines.append(f"[{index}] {doc['name']} ({doc['url']}): {doc['text'][:900]}")
+            section = (doc.get("metadata") or {}).get("section", "resumen")
+            context_lines.append(
+                f"[{index}] {doc['name']} | seccion={section} | {doc['url']}: {doc['text'][:1400]}"
+            )
 
         context = "\n\n".join(context_lines) if context_lines else "No hay contexto disponible."
         return (
@@ -102,11 +106,73 @@ class EsportsChatbot:
             "Respuesta:"
         )
 
+    def _is_tournament_question(self, question: str) -> bool:
+        q = question.lower()
+        keywords = ["torneo", "torneos", "championship", "major", "iem", "blast", "pgl", "esl"]
+        return any(keyword in q for keyword in keywords)
+
+    def _build_tournament_query(self, question: str) -> str:
+        return f"{question} torneos resultados partidos recientes pgl iem blast esl major"
+
+    def _extract_latest_tournament(self, context_docs: list[dict]) -> str | None:
+        if not context_docs:
+            return None
+
+        pattern = re.compile(
+            r"(PGL\s+[A-Za-zÁÉÍÓÚÜÑ0-9 .:-]{2,100}(?:\d{4})?|"
+            r"IEM\s+[A-Za-zÁÉÍÓÚÜÑ0-9 .:-]{2,100}(?:\d{4})?|"
+            r"BLAST[A-Za-zÁÉÍÓÚÜÑ0-9 .:\-]{2,120}(?:\d{4})?|"
+            r"ESL[A-Za-zÁÉÍÓÚÜÑ0-9 .:\-]{2,120}(?:\d{4})?|"
+            r"CCT[A-Za-zÁÉÍÓÚÜÑ0-9 .:\-]{2,120}(?:\d{4})?|"
+            r"[A-Za-zÁÉÍÓÚÜÑ0-9 .:\-]{2,80}Major\s*(?:\d{4})?)",
+            flags=re.IGNORECASE,
+        )
+
+        candidates: list[tuple[int, str, str, float]] = []
+        for doc in context_docs:
+            section = str((doc.get("metadata") or {}).get("section", ""))
+            if section not in {"torneos_resultados", "resumen_equipo", "historia_movimientos"}:
+                continue
+
+            text = str(doc.get("text") or "")
+            score = float(doc.get("score") or 0.0)
+            for match in pattern.finditer(text):
+                name = " ".join(match.group(0).split())
+                start = max(match.start() - 50, 0)
+                end = min(match.end() + 50, len(text))
+                window = text[start:end]
+                years = re.findall(r"20\d{2}", f"{name} {window}")
+                if not years:
+                    continue
+                year = max(int(y) for y in years)
+                candidates.append((year, name, section, score))
+
+        if not candidates:
+            return None
+
+        candidates.sort(
+            key=lambda item: (item[0], 1 if item[2] == "torneos_resultados" else 0, item[3]),
+            reverse=True,
+        )
+        year, name, _, _ = candidates[0]
+        clean_name = re.sub(r"\s{2,}", " ", name).strip(" .:-")
+        return f"Según los datos recuperados, el torneo más reciente mencionado es {clean_name} ({year})."
+
     def answer(self, question: str) -> str:
         if self.generator is None:
             raise RuntimeError("El modelo local no está disponible; no se puede responder sin LLM.")
 
-        context_docs = self.vector_store.search(question, top_k=4)
+        context_docs = self.vector_store.search(question, top_k=8)
+        if self._is_tournament_question(question):
+            tournament_docs = self.vector_store.search(self._build_tournament_query(question), top_k=12)
+            extracted = self._extract_latest_tournament(tournament_docs or context_docs)
+            if extracted:
+                return extracted
+            return (
+                "No encontré evidencia suficiente en el contexto para identificar el último torneo con fiabilidad. "
+                "Indica el equipo (por ejemplo, 'último torneo de G2') y te respondo con precisión."
+            )
+
         prompt = self._build_prompt(question, context_docs)
 
         try:
@@ -128,6 +194,7 @@ class EsportsChatbot:
                 prompt,
                 max_new_tokens=self.max_new_tokens,
                 max_length=None,
+                do_sample=False,
                 return_full_text=False,
             )
 
