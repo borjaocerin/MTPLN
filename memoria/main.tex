@@ -1,0 +1,50 @@
+% Plantilla de documento para PFG usando memoriaPFC.cls
+
+\documentclass{memoriaPFC}
+
+%% ---------------------------------------------------
+%% Comienzo del documento
+%% ---------------------------------------------------
+
+\begin{document}
+
+%% Selección de idioma del documento
+\selectlanguage{spanish}  % Comentar esta línea para redactar en inglés
+
+%% ----------------------
+%% Materia preliminar
+%% ----------------------
+
+\frontmatter
+
+%\includepdf[pages=1]{../portada.pdf}          % Portada delantera (opcional)
+%\includepdf[pages=1]{../portada_firmada.pdf}  % Portada firmada (opcional)
+
+%% Índice
+\tableofcontents
+
+%% ----------------------
+%% Contenido principal
+%% ----------------------
+
+\mainmatter
+
+%% Capítulos principales
+\input{sections/introduccion}
+\input{sections/estado_arte}
+\input{sections/corpus_datos}
+\input{sections/eda}
+\input{sections/sesgos}
+\input{sections/metodologia}
+\input{sections/resultados}
+\input{sections/discusion}
+
+%% ----------------------
+%% Bibliografía y apéndices
+%% ----------------------
+
+\backmatter
+
+\bibliografia{referencias}  % Archivo BibTeX: referencias.bib
+
+\end{document}

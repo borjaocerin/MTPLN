@@ -1,0 +1,118 @@
+GRUPO 10
+BORJA OCERINJAUREGUI MARKINA​
+GORKA LARREA MONTOYA​
+IÑAKI PRIETO BARTUREN
+
+1. Breve estado del arte sobre el problema
+En el ámbito de los esports, la información relacionada con fichajes, cambios de roster,
+biografías de jugadores y composición de equipos se encuentra dispersa entre múltiples páginas
+web y bases de datos no estructuradas. Aunque existen plataformas especializadas como
+Liquipedia, HLTV (para Counter‑Strike) y VLR.gg (para Valorant), la mayor parte de estos
+recursos no ofrece APIs oficiales ni mecanismos directos para acceder a los datos de forma
+automatizada.
+Por ello, en los últimos años se ha extendido el uso de:
+●​ Web scraping para recopilar información estructurada.
+●​ Procesos ETL para transformar datos no estructurados en bases de conocimiento.
+●​ Modelos de lenguaje (LLM) para crear asistentes capaces de responder preguntas
+basadas en bases de datos externas.
+●​ Sistemas RAG (Retrieval‑Augmented Generation) que combinan información real con
+modelos generativos.
+Liquipedia se ha consolidado como la fuente comunitaria más actualizada y completa para
+esports, especialmente en lo referente a plantillas, movimientos de jugadores, historial
+competitivo y biografías. Sin embargo, su falta de API obliga a implementar soluciones de
+extracción automatizada bien diseñadas.
+El proyecto se sitúa en esta línea: desarrollar un sistema capaz de extraer información de
+Liquipedia, almacenarla en una base de datos y ofrecerla mediante un asistente conversacional
+capaz de responder preguntas como:
+●​ “¿Cuál fue el último fichaje de G2 en Counter‑Strike?”
+Este enfoque combina técnicas de scraping, preprocesamiento de datos, almacenamiento
+estructurado y Modelos de Lenguaje aplicados a consultas semánticas.
+
+2. Listado de corpus y recursos identificados
+El principal recurso identificado para el proyecto son las referencias incluidas en la sección de
+transfer, las cuales redirigen a publicaciones en redes sociales como Twitter, Facebook y
+distintos medios especializados. Estas fuentes permiten acceder a información directa y
+actualizada sobre fichajes, movimientos de roster y cambios en plantillas dentro de los esports,
+ya que suelen recoger anuncios oficiales de equipos, declaraciones de jugadores y
+confirmaciones de organizaciones. Gracias a ello, es posible recopilar datos relevantes sobre
+altas, bajas, cesiones, sustituciones temporales y reestructuraciones de equipos a partir de
+comunicaciones públicas y verificadas. Dado que Liquipedia se actualiza de manera colaborativa
+y en tiempo real, ofrece un corpus especialmente adecuado para analizar la evolución de los
+fichajes en distintos títulos, siendo esta la parte central del proyecto. Además de esta fuente
+principal, se han tenido en cuenta otros recursos complementarios como HLTV.org para
+Counter‑Strike o VLR.gg para Valorant, que pueden servir para contrastar o verificar ciertos
+movimientos cuando sea necesario, aunque no forman parte del núcleo de extracción del
+proyecto.
+El sistema también generará su propio corpus a partir del proceso de scraping, creando una
+base de datos estructurada que incluirá información sobre jugadores, equipos y transferencias
+con fechas, roles, y movimientos detallados. Este corpus interno se convertirá en la fuente
+principal para el asistente conversacional, permitiendo responder preguntas sobre fichajes
+recientes, historial de cambios o trayectoria de jugadores específicos. En conjunto, los recursos
+identificados proporcionan una base sólida para construir un sistema centrado en rastrear y
+consultar información sobre fichajes en Liquipedia de forma precisa y actualizada.
+
+3. Arquitecturas, modelos u otros recursos
+técnicos considerados para el desarrollo del
+proyecto
+El recurso principal identificado para este proyecto es Liquipedia (<https://liquipedia.net>), que
+constituye la fuente más completa y actualizada para recopilar información sobre fichajes,
+movimientos de roster y cambios en plantillas dentro de los esports. Sus páginas de equipos
+(por ejemplo: <https://liquipedia.net/counterstrike/G2_Esports>), perfiles de jugadores (ejemplo:
+<https://liquipedia.net/counterstrike/NiKo>) y, especialmente, las referencias incluidas en la
+sección de transfer, que enlazan a publicaciones en redes sociales y medios especializados,
+ofrecen un corpus muy rico y detallado sobre altas, bajas y reestructuraciones internas a partir
+de anuncios oficiales y comunicaciones públicas. Debido a que Liquipedia se actualiza de forma
+colaborativa y en tiempo real, proporciona una base ideal para analizar la evolución de los
+fichajes, que es el foco principal de este proyecto.
+
+Como apoyo puntual, se han identificado también recursos complementarios que pueden ayudar
+a validar o contrastar información extraída de Liquipedia. En el caso del shooter Counter‑Strike,
+la plataforma HLTV.org (<https://www.hltv.org/>) cuenta con bases de datos especialmente
+fiables para confirmar movimientos de jugadores, mientras que en Valorant existe una referencia
+equivalente en VLR.gg (<https://www.vlr.gg/>). Aunque estos sitios no forman parte del flujo de
+scraping principal, sí se consideran útiles para verificar datos y reforzar la coherencia del corpus.
+Adicionalmente, el proyecto generará un corpus propio, compuesto por la base de datos que se
+derive del proceso de scraping. En ella se almacenará de forma estructurada toda la información
+sobre jugadores, equipos y fichajes con sus fechas, roles y movimientos, creando así una fuente
+interna perfectamente adaptada a la consulta mediante el asistente conversacional. Este corpus
+será el núcleo sobre el que el sistema responderá preguntas acerca de fichajes recientes,
+historial de cambios o la trayectoria de un jugador concreto.
+
+4. Grado de avance en el desarrollo
+El proyecto se encuentra todavía en una fase temprana. Hasta ahora se ha logrado implementar
+un primer scraper capaz de extraer información básica de Liquipedia, especialmente datos
+relacionados con jugadores, equipos. Estas pruebas iniciales han servido para validar que la
+estructura de la web permite obtener la información necesaria, aunque el scraping aún no cubre
+todas las secciones ni todos los datos relevantes para el proyecto. Todavía queda por completar
+la extracción de historiales completos de fichajes, normalizar la información obtenida y comenzar
+el diseño e integración de la base de datos y el asistente conversacional, de modo que el
+desarrollo completo avanza pero continúa en sus primeras etapas.
+
+5. Posibles cambios o ajustes respecto a la
+propuesta original
+Se han realizado un par de ajustes en la propuesta inicial del proyecto: mientras que la idea
+original consistía en desarrollar un generador de rankings estático basado en los datos
+obtenidos de Liquipedia, en este primer hito se ha decidido evolucionar hacia un chatbot
+interactivo con enfoque RAG. Este cambio se justifica porque un chatbot permite al usuario no
+solo visualizar un ranking general, sino también formular preguntas específicas y personalizadas
+sobre fichajes, jugadores y equipos, lo que aporta un valor añadido significativamente mayor.
+Además, esta nueva orientación aprovecha mejor las posibilidades actuales del procesamiento
+de lenguaje natural y permite construir una herramienta más flexible, útil y escalable que un
+sistema estático.
+
+Por otro lado se ha decidido scrapear las referencias encontradas en el apartado de transfer, ya
+que cuentan con mucho texto que hace más compleja la recopilación de la información. Ya que
+en nuestra propuesta original, se pretendía únicamente scrapear la sección de transfer, que
+cuenta con la fecha del traspaso, el jugador traspasado, el equipo anterior y el nuevo equipo del
+jugador. El cambio de idea, complica enormemente la tarea, ya que no todas las referencias son
+del equipo que vende al jugador y no todos los equipos publican de la misma forma o usando las
+mismas palabras.
+
+6. Referencias Bibliográficas
+Liquipedia. (2024). Liquipedia Esports Wiki. [1]
+Jenny, S. E., Manning, R. D., Keiper, M. C., & Olrich, T. W. (2016). Virtual(ly) athletes: Where
+eSports fit within the definition of “sport”. Quest, 69(1), 1–18. [2]
+Mitchell, R. (2018). Web Scraping with Python: Collecting More Data from the Modern Web (2nd
+ed.). O’Reilly Media. [3]
+
+

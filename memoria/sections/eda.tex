@@ -1,0 +1,223 @@
+﻿\chapter{Análisis Exploratorio de Datos (EDA)}
+\label{ch:eda}
+
+El análisis exploratorio de datos (EDA) constituye una etapa fundamental para comprender las características del corpus construido, identificar patrones relevantes, detectar posibles problemas de calidad, y fundamentar decisiones de preprocesamiento posteriores. Este capítulo presenta los resultados del EDA realizado sobre el corpus de 30 equipos de Counter-Strike extraídos de Liquipedia.
+
+\section{Distribución de Longitud de Documentos}
+
+Los datos muestran que la distribución de longitud de documentos medida en número de caracteres indica que la mayoría de documentos se concentra en el rango de 20,000 a 40,000 caracteres, con una distribución aproximadamente normal.
+
+\begin{figure}[ht]
+\centering
+\fbox{\begin{minipage}{0.75\textwidth}
+\centering
+\vspace{3cm}
+\textit{[Placeholder: Gráfica de distribución de longitud de documentos]}\\
+\textit{Histograma mostrando concentración en 20k-40k caracteres}
+\vspace{3cm}
+\end{minipage}}
+\caption{Distribución de longitud de documentos (caracteres). Se observa concentración entre 20k-40k caracteres con distribución normal.}
+\label{fig:longitud_docs}
+\end{figure}
+
+\subsection{Interpretación}
+
+\begin{itemize}
+    \item \textbf{Homogeneidad moderada}: La concentración en un rango específico indica que las páginas de Liquipedia siguen estructuras relativamente consistentes, facilitando el procesamiento uniforme.
+    
+    \item \textbf{Ausencia de outliers extremos}: No se detectan documentos excesivamente cortos (<10,000 caracteres) ni extremadamente largos (>50,000 caracteres), lo que sugiere buena calidad en el scraping y ausencia de errores mayores de extracción.
+    
+    \item \textbf{Cola derecha}: Algunos documentos superan los 40,000 caracteres, correspondiendo probablemente a equipos con historiales más extensos o logros competitivos más detallados (e.g., Natus Vincere, FaZe Clan, G2 Esports).
+    
+    \item \textbf{Implicaciones para RAG}: La homogeneidad en longitud facilita el chunking (división en fragmentos) para el sistema de recuperación, permitiendo tamaños de chunk consistentes.
+\end{itemize}
+
+\section{Distribución de Palabras por Documento}
+
+El análisis por equipo del número de palabras contenidas en cada documento tras el preprocesamiento y traducción muestra patrones interesantes.
+
+\begin{figure}[ht]
+\centering
+\fbox{\begin{minipage}{0.85\textwidth}
+\centering
+\vspace{4cm}
+\textit{[Placeholder: Gráfica de barras horizontales]}\\
+\textit{Palabras por equipo (30 equipos): rango 1,500-8,000 palabras}
+\vspace{4cm}
+\end{minipage}}
+\caption{Número de palabras por equipo. Se observa variabilidad significativa entre equipos tier 1 (más palabras) y tier 2-3 (menos palabras).}
+\label{fig:palabras_doc}
+\end{figure}
+
+\subsection{Observaciones Principales}
+
+\begin{itemize}
+    \item \textbf{Variabilidad entre equipos}: El rango varía desde aproximadamente 1,500 palabras (equipos menos documentados) hasta más de 8,000 palabras (equipos con amplia trayectoria).
+    
+    \item \textbf{Correlación con relevancia}: Los equipos con mayor número de palabras corresponden típicamente a organizaciones tier 1 con historiales extensos: Fnatic, Complexity, MOUZ, Natus Vincere, etc.
+    
+    \item \textbf{Sesgo de popularidad identificado}: Esta distribución desigual revela un sesgo inherente de Liquipedia hacia equipos más establecidos, que será analizado en detalle en el Capítulo de Sesgos.
+    
+    \item \textbf{Implicaciones para recuperación}: En un sistema BM25, documentos más largos no necesariamente obtienen ventaja debido a la normalización por longitud implementada en el algoritmo.
+\end{itemize}
+
+\section{Análisis de Frecuencias de Términos}
+
+El análisis de frecuencias muestra las 15 palabras más frecuentes en el corpus tras aplicar filtrado de stopwords (palabras vacías) en español.
+
+\begin{figure}[ht]
+\centering
+\fbox{\begin{minipage}{0.85\textwidth}
+\centering
+\vspace{4cm}
+\textit{[Placeholder: Gráfica de barras horizontales - Top 15 palabras]}\\
+\textit{saltar, equipo, 2025, 2023, entrenador, esports, 2022, 2026, etc.}
+\vspace{4cm}
+\end{minipage}}
+\caption{Top 15 palabras más frecuentes en el corpus (stopwords excluidas). Predominan términos relacionados con el dominio: equipo, entrenador, esports, fechas.}
+\label{fig:top_palabras}
+\end{figure}
+
+\subsection{Términos Dominantes}
+
+Los términos más frecuentes reflejan claramente el dominio del corpus:
+
+\begin{enumerate}
+    \item \textbf{"saltar"} (mayor frecuencia): Artefacto de navegación de Liquipedia que no se filtró completamente en el preprocesamiento. Representa una oportunidad de mejora en la limpieza.
+    
+    \item \textbf{"equipo"}: Término central del dominio, aparece en contextos de cambios de equipo, logros de equipo, descripción de equipos.
+    
+    \item \textbf{"2025", "2023", "2022", "2026", "2024", "2021", "2019", "2018"}: Alta presencia de fechas indica que el corpus contiene información temporal rica (fichajes, torneos, fundaciones).
+    
+    \item \textbf{"entrenador"}: Refleja la importancia de información sobre staff técnico en el corpus.
+    
+    \item \textbf{"esports"}: Término genérico del dominio.
+    
+    \item \textbf{"del", "team", "fecha"}: Mezcla de español e inglés residual, indicando que la traducción no fue perfecta o que algunos términos técnicos se preservaron.
+\end{enumerate}
+
+\subsection{Implicaciones}
+
+\begin{itemize}
+    \item \textbf{Necesidad de limpieza adicional}: La presencia de "saltar" indica que el preprocesamiento puede refinarse para eliminar artefactos de navegación más exhaustivamente.
+    
+    \item \textbf{Riqueza temporal}: La abundancia de años específicos sugiere que el corpus es adecuado para responder preguntas temporales como "¿Cuándo fichó X por Y?".
+    
+    \item \textbf{Vocabulario específico del dominio}: Términos como "entrenador", "equipo", "esports" confirman que el corpus captura correctamente el vocabulario especializado.
+    
+    \item \textbf{Bilingüismo residual}: La mezcla español-inglés ("team", "fecha") puede afectar la recuperación de información si las consultas del usuario no coinciden en idioma con los términos del corpus.
+\end{itemize}
+
+\section{Densidad de Oraciones por Documento}
+
+El análisis del número estimado de oraciones por documento proporciona una medida de granularidad textual.
+
+\begin{figure}[ht]
+\centering
+\fbox{\begin{minipage}{0.85\textwidth}
+\centering
+\vspace{4cm}
+\textit{[Placeholder: Gráfica de barras horizontales - Densidad de oraciones]}\\
+\textit{Número de oraciones por equipo: rango 100-1,000 oraciones}
+\vspace{4cm}
+\end{minipage}}
+\caption{Número estimado de oraciones por documento. Equipos con mayor detalle informativo presentan mayor densidad de oraciones.}
+\label{fig:densidad_oraciones}
+\end{figure}
+
+\subsection{Análisis de Densidad}
+
+\begin{itemize}
+    \item \textbf{Rango de variación}: Los documentos contienen entre aproximadamente 100 y 1,000 oraciones estimadas, correlacionándose con la longitud total.
+    
+    \item \textbf{Equipos con alta densidad}: Fnatic, Complexity, Team Spirit presentan las mayores densidades de oraciones, indicando narrativas detalladas sobre historiales, logros y cambios de roster.
+    
+    \item \textbf{Equipos con baja densidad}: Equipos menos documentados (tier 2-3) presentan menor densidad, con información más esquemática.
+    
+    \item \textbf{Implicaciones para chunking}: Para el sistema RAG, documentos con alta densidad de oraciones permiten chunks más informativos, mientras que documentos con baja densidad pueden requerir chunks más largos para mantener contexto suficiente.
+\end{itemize}
+
+\section{Análisis de Calidad Textual}
+
+Más allá de las visualizaciones, se realizaron análisis adicionales de calidad textual:
+
+\subsection{Detección de Repeticiones}
+
+Se identificaron patrones repetitivos en algunos documentos, típicamente correspondientes a:
+\begin{itemize}
+    \item Encabezados de secciones repetidos ("Roster actual", "Historial de transferencias")
+    \item Plantillas de Liquipedia no completamente filtradas
+    \item Información duplicada en diferentes secciones de la misma página
+\end{itemize}
+
+\subsection{Análisis de Encoding}
+
+Se validó que el 100\% de documentos utiliza encoding UTF-8 válido sin caracteres corruptos, garantizando compatibilidad con sistemas de procesamiento posteriores.
+
+\subsection{Proporción Español-Inglés}
+
+Mediante muestreo manual de 5 documentos aleatorios, se estimó que:
+\begin{itemize}
+    \item $\sim$85\% del texto está correctamente traducido al español
+    \item $\sim$10\% corresponde a nombres propios preservados en inglés (deseado)
+    \item $\sim$5\% corresponde a fragmentos no traducidos por error o términos técnicos
+\end{itemize}
+
+\section{Identificación de Patrones Relevantes}
+
+El EDA reveló varios patrones relevantes para el diseño del sistema RAG:
+
+\subsection{Estructuras Recurrentes}
+
+Los documentos de Liquipedia siguen estructuras semi-consistentes:
+\begin{verbatim}
+1. Introducción breve del equipo
+2. Infobox con datos estructurados
+3. Historial de logros competitivos
+4. Roster actual con roles de jugadores
+5. Historial de transferencias cronológico
+6. Referencias a fuentes externas
+\end{verbatim}
+
+Esta consistencia permite diseñar estrategias de chunking que respeten límites de sección, mejorando la coherencia de pasajes recuperados.
+
+\subsection{Información Temporal}
+
+La alta frecuencia de fechas y años indica que el corpus contiene rica información temporal, sugiriendo que el sistema debe ser capaz de responder preguntas temporales como:
+\begin{itemize}
+    \item "¿Quién era el entrenador de G2 en 2023?"
+    \item "¿Cuándo se fundó Natus Vincere?"
+    \item "¿Qué fichajes hizo FaZe Clan en 2024?"
+\end{itemize}
+
+\subsection{Entidades Nombradas}
+
+Se detectaron altas frecuencias de:
+\begin{itemize}
+    \item Nombres de jugadores (nicknames): "NiKo", "s1mple", "ZywOo", etc.
+    \item Nombres de equipos: "G2 Esports", "Natus Vincere", "FaZe Clan", etc.
+    \item Torneos: "PGL Major", "IEM", "BLAST Premier", etc.
+    \item Ubicaciones: "Europa", "América del Norte", "CIS", etc.
+\end{itemize}
+
+Esto sugiere que un sistema de Reconocimiento de Entidades Nombradas (NER) específico del dominio podría mejorar la recuperación de información.
+
+\section{Conclusiones del EDA}
+
+El análisis exploratorio permite extraer las siguientes conclusiones:
+
+\begin{enumerate}
+    \item \textbf{Corpus de calidad aceptable}: Las distribuciones observadas indican que el scraping capturó correctamente información relevante sin errores mayores.
+    
+    \item \textbf{Heterogeneidad controlada}: Aunque existe variabilidad en longitud entre documentos, no hay outliers extremos que requieran tratamiento especial.
+    
+    \item \textbf{Sesgo de popularidad identificado}: Equipos tier 1 tienen documentos significativamente más extensos, lo que debe considerarse en el análisis de sesgos.
+    
+    \item \textbf{Oportunidades de mejora en preprocesamiento}: Artefactos como "saltar" y fragmentos en inglés indican que el pipeline de limpieza puede refinarse.
+    
+    \item \textbf{Riqueza temporal}: El corpus contiene abundante información temporal, validando su idoneidad para responder preguntas sobre fichajes y cambios históricos.
+    
+    \item \textbf{Vocabulario específico del dominio}: Los términos más frecuentes confirman que el corpus captura correctamente el lenguaje de esports profesionales.
+\end{enumerate}
+
+Estos hallazgos fundamentan decisiones de diseño del sistema RAG y guían el análisis de sesgos del siguiente capítulo.

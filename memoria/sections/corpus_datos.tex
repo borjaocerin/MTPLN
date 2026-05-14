@@ -1,0 +1,204 @@
+﻿\chapter{Corpus y Recopilación de Datos}
+\label{ch:corpus_datos}
+
+Este capítulo describe el proceso completo de construcción del corpus del proyecto, desde la selección de la fuente de datos hasta las características finales del dataset obtenido. El corpus constituye la base de conocimiento sobre la cual opera el sistema RAG propuesto.
+
+\section{Fuente de Datos: Liquipedia}
+
+Liquipedia (\url{https://liquipedia.net}) es una enciclopedia colaborativa especializada en deportes electrónicos, mantenida por la comunidad mediante un sistema wiki similar a Wikipedia. Se seleccionó Liquipedia como fuente principal de datos por las siguientes razones:
+
+\begin{itemize}
+    \item \textbf{Exhaustividad}: Liquipedia contiene información detallada sobre equipos profesionales, incluyendo historiales de jugadores, cambios de roster, logros competitivos y biografías.
+    
+    \item \textbf{Actualización continua}: La comunidad mantiene la información actualizada en tiempo real, con cambios reflejados frecuentemente tras anuncios oficiales de equipos.
+    
+    \item \textbf{Estructura consistente}: Aunque es contenido generado por usuarios, Liquipedia mantiene plantillas estandarizadas que facilitan la extracción automatizada.
+    
+    \item \textbf{Verificabilidad}: Las entradas incluyen referencias a fuentes externas (Twitter, medios especializados) que validan la información.
+    
+    \item \textbf{Multilingüismo}: Aunque predomina el inglés, la información es consistente entre diferentes idiomas de esports.
+\end{itemize}
+
+Se eligió Counter-Strike como el juego objetivo debido a su madurez como esport (más de 20 años de historia competitiva), la abundancia de información disponible en Liquipedia, y la estabilidad de sus equipos profesionales comparado con títulos más recientes.
+
+\section{Proceso de Web Scraping}
+
+Dado que Liquipedia no ofrece una API oficial, se implementó un sistema de web scraping automatizado utilizando Python con las bibliotecas Selenium y BeautifulSoup. El proceso consta de las siguientes etapas:
+
+\subsection{Navegación Automatizada con Selenium}
+
+Se utilizó Selenium WebDriver con Google Chrome en modo headless por las siguientes razones técnicas:
+
+\begin{itemize}
+    \item \textbf{Contenido dinámico}: Liquipedia carga parte de su contenido mediante JavaScript, especialmente tablas de transferencias y estadísticas. Selenium permite esperar a que el JavaScript se ejecute completamente antes de extraer el HTML.
+    
+    \item \textbf{Scroll programático}: Para garantizar la carga de todos los elementos (lazy loading), se implementó scroll automático hacia diferentes posiciones de la página.
+    
+    \item \textbf{Gestión de recursos}: Se crea una nueva instancia del navegador para cada URL scrapeada, evitando fugas de memoria en procesos largos.
+\end{itemize}
+
+El código implementa las siguientes optimizaciones:
+
+\begin{verbatim}
+- Timeout de carga: 20 segundos máximo por página
+- Scroll progresivo: mitad de página → final de página
+- User-Agent personalizado: evitar bloqueos anti-bot
+- Headless mode: ejecución sin interfaz gráfica
+\end{verbatim}
+
+\subsection{Extracción de Información con BeautifulSoup}
+
+Una vez obtenido el HTML completo, se utiliza BeautifulSoup para parsear y extraer información estructurada. Los elementos extraídos incluyen:
+
+\begin{enumerate}
+    \item \textbf{Infobox del equipo}: Ubicación, fecha de fundación, entrenadores, manager.
+    \item \textbf{Texto principal}: Biografía del equipo, logros históricos, filosofía organizacional.
+    \item \textbf{Tablas de roster}: Jugadores actuales con sus roles (AWPer, rifler, IGL).
+    \item \textbf{Historial de transferencias}: Movimientos de jugadores con fechas y equipos origen/destino.
+    \item \textbf{Referencias externas}: Enlaces a anuncios oficiales en Twitter, HLTV.org y medios especializados.
+\end{enumerate}
+
+Se implementó un sistema de filtrado de referencias que conserva solo enlaces a fuentes verificables, excluyendo enlaces internos de Liquipedia y dominios no relevantes:
+
+\begin{verbatim}
+Fuentes válidas incluidas:
+- x.com / twitter.com (anuncios oficiales)
+- hltv.org (base de datos de Counter-Strike)
+- vlr.gg (estadísticas de esports)
+- facebook.com, instagram.com (comunicados oficiales)
+- medios especializados (dexerto, dust2.us, etc.)
+\end{verbatim}
+
+\subsection{Selección de Equipos}
+
+Se seleccionaron 30 equipos de Counter-Strike siguiendo criterios de relevancia y diversidad geográfica:
+
+\begin{itemize}
+    \item \textbf{Equipos tier 1}: Organizaciones de élite con presencia constante en torneos principales (G2 Esports, Natus Vincere, FaZe Clan, etc.).
+    
+    \item \textbf{Equipos tier 2-3}: Organizaciones emergentes o regionales para aumentar diversidad del corpus.
+    
+    \item \textbf{Diversidad geográfica}: Equipos de Europa, América, Asia para capturar diferentes contextos organizacionales.
+    
+    \item \textbf{Historiales variados}: Mezcla de equipos consolidados y organizaciones recientes.
+\end{itemize}
+
+La lista completa de equipos scrapeados se puede consultar en el archivo \texttt{data/latest\_ingest.json}.
+
+\section{Preprocesamiento y Limpieza}
+
+Los textos extraídos mediante scraping requieren un preprocesamiento exhaustivo antes de ser utilizables en el sistema RAG. El pipeline de limpieza implementado incluye:
+
+\subsection{Normalización de HTML}
+
+\begin{itemize}
+    \item Eliminación de etiquetas HTML residuales (\texttt{<span>}, \texttt{<div>}, etc.).
+    \item Conversión de entidades HTML (\texttt{\&nbsp;}, \texttt{\&amp;}, etc.) a caracteres Unicode.
+    \item Eliminación de artefactos de navegación ("saltar", "editar", "ver historial").
+    \item Normalización de espacios en blanco: múltiples espacios → espacio simple, múltiples saltos de línea → máximo dos.
+\end{itemize}
+
+\subsection{Traducción Automática}
+
+Dado que el objetivo es un chatbot en español y Liquipedia está en inglés, se implementó traducción automática mediante la biblioteca \texttt{deep-translator} con Google Translate como backend. Las consideraciones técnicas incluyen:
+
+\begin{itemize}
+    \item \textbf{Traducción por chunks}: El texto se divide en fragmentos de máximo 1000 caracteres para evitar límites de la API y mejorar la granularidad.
+    
+    \item \textbf{Preservación de entidades}: Aunque no se implementó un sistema específico de protección de entidades nombradas, se validó manualmente que nombres de equipos y jugadores se preservan correctamente en la mayoría de casos.
+    
+    \item \textbf{Fallback}: Si la traducción de un chunk falla, se conserva el texto original en inglés en lugar de descartar información.
+    
+    \item \textbf{Detección de errores}: Se valida que el texto traducido tenga longitud razonable (no vacío, no excesivamente corto).
+\end{itemize}
+
+\subsection{Validación de Calidad}
+
+Se implementaron validaciones automáticas para garantizar la calidad del corpus:
+
+\begin{verbatim}
+- Longitud mínima: 100 caracteres por documento
+- Longitud máxima: 100,000 caracteres (detección de errores)
+- Ausencia de fragmentos HTML: verificación mediante regex
+- Coherencia de encoding: UTF-8 válido
+\end{verbatim}
+
+Los documentos que no superan las validaciones se registran en logs pero no se descartan completamente, permitiendo revisión manual posterior.
+
+\section{Características del Corpus Final}
+
+El corpus resultante presenta las siguientes características cuantitativas:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|r|}
+\hline
+\textbf{Métrica} & \textbf{Valor} \\
+\hline
+Número de equipos (documentos) & 30 \\
+Palabras totales & $\sim$150,000 \\
+Promedio palabras/documento & $\sim$5,000 \\
+Mínimo palabras/documento & $\sim$1,500 \\
+Máximo palabras/documento & $\sim$9,000 \\
+Idioma final & Español \\
+Periodo temporal cubierto & 2015-2026 \\
+\hline
+\end{tabular}
+\caption{Estadísticas descriptivas del corpus}
+\label{tab:corpus_stats}
+\end{table}
+
+\subsection{Estructura de Datos}
+
+Cada documento del corpus se almacena en formato JSON con la siguiente estructura:
+
+\begin{verbatim}
+{
+  "team_name": "Nombre del equipo",
+  "url": "URL de Liquipedia",
+  "infobox": {
+    "location": "País/región",
+    "founded": "Año de fundación",
+    "coach": "Entrenador actual",
+    ...
+  },
+  "full_text": "Texto completo traducido al español",
+  "references": [
+    {"label": "Fuente", "url": "URL de referencia"}
+  ],
+  "timestamp": "Fecha de extracción"
+}
+\end{verbatim}
+
+Esta estructura facilita tanto la búsqueda de información específica (infobox) como la recuperación de pasajes relevantes para el sistema RAG (full\_text).
+
+\section{Consideraciones Éticas y Legales}
+
+El scraping de Liquipedia se realizó siguiendo prácticas éticas:
+
+\begin{itemize}
+    \item \textbf{Robots.txt}: Se respetan las directrices del archivo robots.txt de Liquipedia.
+    \item \textbf{Rate limiting}: Pausas entre requests para no sobrecargar el servidor.
+    \item \textbf{Uso académico}: El corpus se utiliza exclusivamente con fines educativos en el contexto de la asignatura MTPLN.
+    \item \textbf{Atribución}: Se reconoce Liquipedia como fuente original y se preservan referencias a contenido externo.
+    \item \textbf{No redistribución comercial}: El corpus no se distribuye públicamente ni se utiliza con fines lucrativos.
+\end{itemize}
+
+\section{Limitaciones del Corpus}
+
+Es importante reconocer las siguientes limitaciones:
+
+\begin{itemize}
+    \item \textbf{Cobertura temporal}: Aunque el scraping captura el estado actual de cada equipo, el historial completo puede no estar íntegramente representado.
+    
+    \item \textbf{Errores de traducción}: La traducción automática puede introducir imprecisiones, especialmente en terminología técnica de esports.
+    
+    \item \textbf{Sesgos de popularidad}: Equipos más populares tienden a tener entradas más extensas y detalladas en Liquipedia.
+    
+    \item \textbf{Volatilidad de información}: Los cambios de roster ocurren constantemente, por lo que el corpus refleja un momento específico en el tiempo.
+    
+    \item \textbf{Ausencia de verificación humana}: No se realizó validación manual exhaustiva de traducciones ni corrección de errores menores.
+\end{itemize}
+
+Estas limitaciones se analizan en profundidad en el Capítulo de Análisis de Sesgos.
+

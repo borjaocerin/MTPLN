@@ -1,0 +1,29 @@
+﻿\chapter{Introducción}
+\label{ch:introduccion}
+
+% Contexto general del proyecto
+
+El crecimiento exponencial de los deportes electrónicos (esports) en la última década ha generado un volumen masivo de información distribuida en múltiples plataformas digitales. En particular, el ecosistema competitivo de \textit{Counter-Strike}, uno de los juegos más longevos y populares en la escena profesional, cuenta con cientos de equipos, miles de jugadores y un constante flujo de fichajes, resultados de torneos y cambios en las plantillas. Esta información, aunque valiosa para aficionados, analistas y profesionales del sector, se encuentra fragmentada en diversas fuentes como sitios web especializados, redes sociales y wikis colaborativas.
+
+% Motivación del trabajo
+
+Liquipedia se ha consolidado como la enciclopedia colaborativa de referencia en esports, mantenida por la comunidad y estructurada de forma similar a Wikipedia. Sin embargo, el acceso a esta información requiere navegación manual entre múltiples páginas, lo que dificulta la obtención rápida de respuestas a consultas específicas. En este contexto, los sistemas de pregunta-respuesta conversacionales basados en Procesamiento del Lenguaje Natural (PLN) representan una oportunidad para facilitar el acceso a información estructurada mediante interfaces intuitivas en lenguaje natural.
+
+El presente trabajo aborda el desarrollo de un sistema completo de minería de texto y PLN que integra técnicas de web scraping, preprocesamiento lingüístico, traducción automática y generación aumentada por recuperación (RAG, \textit{Retrieval-Augmented Generation}). El sistema resultante permite a los usuarios consultar información sobre equipos profesionales de \textit{Counter-Strike} en español de forma conversacional, superando las barreras idiomáticas y de navegación que presentan las fuentes originales.
+
+% Objetivos principales
+
+Los objetivos principales de este proyecto son:
+
+\begin{itemize}
+    \item Construir un corpus en español sobre equipos profesionales de \textit{Counter-Strike} mediante web scraping automatizado de Liquipedia.
+    \item Implementar un pipeline de preprocesamiento que incluya limpieza, normalización y traducción automática de textos.
+    \item Desarrollar un sistema RAG que combine búsqueda semántica con modelos de lenguaje para generar respuestas contextualizadas.
+    \item Analizar los sesgos presentes en el corpus y proponer estrategias de mitigación.
+    \item Evaluar el rendimiento del sistema mediante métricas estándar de recuperación y generación.
+\end{itemize}
+
+% Estructura de la memoria
+
+% El resto de la memoria se organiza de la siguiente manera: el Capítulo~\ref{ch:estado_arte} revisa los fundamentos teóricos y el estado del arte en sistemas RAG, web scraping y traducción automática; el Capítulo~\ref{ch:corpus_datos} describe el proceso de construcción del corpus mediante scraping de Liquipedia; el Capítulo~\ref{ch:eda} presenta un análisis exploratorio de los datos recopilados; el Capítulo~\ref{ch:sesgos} examina los sesgos identificados en el corpus y las medidas adoptadas; el Capítulo~\ref{ch:metodologia} detalla la arquitectura del sistema y las técnicas implementadas; el Capítulo~\ref{ch:resultados} expone los resultados de la evaluación; y finalmente, el Capítulo~\ref{ch:discusion} discute las limitaciones del trabajo y las líneas futuras de investigación.
+

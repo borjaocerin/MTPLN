@@ -1,0 +1,9 @@
+﻿El proyecto tiene un objetivo claro y un corpus bien definido a partir de Liquipedia, y la decisión de orientarse hacia un chatbot basado en RAG es adecuada, ya que puede aportar mayor flexibilidad y valor frente a un enfoque más estático.
+
+Sin embargo, el trabajo se encuentra todavía en una fase muy inicial. No hay apenas detalle técnico sobre la arquitectura, los modelos o las estrategias de procesamiento de datos, y el scraping presentado es parcial. Tampoco se explican aspectos clave como la limpieza o normalización de datos complejos, ni se define un plan de evaluación con métricas claras que permitan medir el rendimiento del sistema. En general, el nivel de concreción es bajo y el avance es muy limitado en este hito, lo que dificulta valorar la viabilidad real de la propuesta.
+
+Además, el estado del arte es mínimo y faltan referencias académicas que respalden las decisiones adoptadas, lo que reduce la solidez del planteamiento.
+
+En conjunto, es necesario un esfuerzo importante para desarrollar la parte técnica, definir con claridad la arquitectura y establecer un esquema de evaluación sólido.
+
+Con un mayor grado de concreción y trabajo en los aspectos señalados, el proyecto puede reconducirse y alcanzar el nivel esperado en la entrega final.

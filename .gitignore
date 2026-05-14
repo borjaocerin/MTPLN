@@ -1,0 +1,23 @@
+﻿# Ignorar carpeta memoria y todo su contenido
+# /memoria/
+
+# Archivos temporales de LaTeX (memoria/)
+memoria/*.aux
+memoria/*.bbl
+memoria/*.blg
+memoria/*.fdb_latexmk
+memoria/*.fls
+memoria/*.lof
+memoria/*.log
+memoria/*.lol
+memoria/*.lot
+memoria/*.out
+memoria/*.toc
+memoria/*.synctex.gz
+memoria/*.nav
+memoria/*.snm
+memoria/*.vrb
+memoria/*~
+
+/.github/
+/proyecto-liquidpedia/.venv/

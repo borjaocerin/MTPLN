@@ -1,0 +1,68 @@
+﻿\chapter{Estado del Arte}
+\label{ch:estado_arte}
+
+En este capítulo se revisan los trabajos y técnicas existentes que fundamentan el desarrollo de este proyecto, abordando cuatro áreas principales: sistemas de generación aumentada por recuperación (RAG), web scraping de recursos colaborativos, procesamiento de lenguaje natural en dominios específicos, y traducción automática. La combinación de estas técnicas constituye la base metodológica del chatbot propuesto.
+
+\section{Sistemas RAG (Retrieval-Augmented Generation)}
+
+Los sistemas de generación aumentada por recuperación (RAG) representan un paradigma que combina la recuperación de información con modelos de lenguaje generativos. \cite{lewis2020retrieval} introdujeron este enfoque en su trabajo seminal, demostrando que la incorporación de un mecanismo de recuperación de documentos relevantes mejora significativamente la capacidad de los modelos de lenguaje para responder preguntas basándose en conocimiento factual externo.
+
+El funcionamiento básico de un sistema RAG consiste en dos componentes principales: un recuperador (\textit{retriever}) que busca documentos relevantes dado una consulta, y un generador que produce respuestas coherentes basándose en los documentos recuperados \cite{guu2020retrieval}. Esta arquitectura resulta especialmente útil para dominios con conocimiento dinámico y actualizable, como es el caso de los esports, donde la información sobre fichajes y equipos cambia constantemente.
+
+\cite{izacard2021leveraging} demostraron que el rendimiento de sistemas RAG mejora significativamente cuando se utilizan múltiples pasajes recuperados, una técnica conocida como Fusion-in-Decoder (FiD). Por su parte, \cite{karpukhin2020dense} propusieron DPR (Dense Passage Retrieval), que utiliza representaciones densas para la recuperación de información, superando a métodos tradicionales como BM25 en ciertos escenarios.
+
+Sin embargo, el presente proyecto utiliza BM25 como algoritmo de recuperación debido a su efectividad demostrada en corpus de tamaño moderado, su eficiencia computacional y su independencia de modelos de lenguaje pre-entrenados que requieren recursos significativos \cite{robertson2009probabilistic}.
+
+\section{Web Scraping de Wikis y Contenido Colaborativo}
+
+La extracción automatizada de información desde sitios web colaborativos como Wikipedia y Liquipedia presenta desafíos técnicos específicos. \cite{wikiscraping2018} analizan las consideraciones éticas y técnicas del scraping de wikis, destacando la importancia de respetar los términos de uso y las buenas prácticas de acceso automatizado.
+
+Liquipedia, como wiki especializada en esports, comparte características estructurales con Wikipedia pero presenta particularidades propias: contenido altamente dinámico, actualizaciones frecuentes realizadas por la comunidad, y ausencia de API oficial \cite{esportswiki2019}. Esto obliga a utilizar técnicas de scraping basadas en análisis del DOM HTML y navegación automatizada.
+
+\cite{ferrara2014web} identifican tres desafíos principales en el web scraping moderno: contenido generado dinámicamente mediante JavaScript, sistemas anti-bot, y estructura HTML inconsistente. En el contexto de Liquipedia, el contenido se carga parcialmente mediante JavaScript, lo que requiere el uso de navegadores headless como Selenium para garantizar la captura completa de información \cite{selenium2021automated}.
+
+\cite{mitchell2018web} enfatizan la importancia de la normalización y limpieza de datos extraídos mediante scraping, especialmente cuando provienen de contenido generado por usuarios. Las wikis colaborativas pueden contener inconsistencias en formato, enlaces rotos y artefactos de edición que deben tratarse en el preprocesamiento.
+
+\section{NLP en Dominios Específicos}
+
+La aplicación de procesamiento de lenguaje natural a dominios específicos como los esports presenta desafíos particulares relacionados con el vocabulario especializado, jerga técnica y entidades nombradas propias del dominio \cite{domain2020nlp}.
+
+\cite{beltagy2019scibert} demostraron que los modelos de lenguaje pre-entrenados en textos generales (como BERT) obtienen mejores resultados cuando se afinan (\textit{fine-tuning}) con corpus específicos del dominio. Sin embargo, esta aproximación requiere grandes cantidades de datos etiquetados del dominio, un requisito no siempre viable en áreas especializadas como los esports profesionales.
+
+Los sistemas de pregunta-respuesta en dominios específicos enfrentan el desafío de la ambigüedad terminológica. \cite{rajpurkar2016squad} introdujeron SQuAD, un benchmark ampliamente utilizado para sistemas de pregunta-respuesta, aunque reconocen que el rendimiento en dominios específicos suele ser inferior debido a la falta de representatividad del corpus de entrenamiento.
+
+En el contexto de esports, nombres de equipos, apodos de jugadores (\textit{nicknames}) y términos técnicos del juego constituyen un vocabulario especializado que puede no estar bien representado en modelos de lenguaje generalistas \cite{esports2021nlp}. Por ello, el presente proyecto enfatiza la construcción de un corpus específico y actualizado desde Liquipedia.
+
+\section{Traducción Automática y Multilingüismo}
+
+Dado que Liquipedia está principalmente en inglés y el objetivo del proyecto es un chatbot en español, la traducción automática constituye un componente crítico del pipeline de procesamiento.
+
+Los sistemas modernos de traducción automática neural (NMT) han alcanzado niveles de calidad cercanos a la traducción humana en pares de idiomas bien representados como inglés-español \cite{bahdanau2014neural}. \cite{vaswani2017attention} introdujeron la arquitectura Transformer, que revolucionó la traducción automática y constituye la base de sistemas actuales como Google Translate y DeepL.
+
+Sin embargo, la traducción de textos especializados presenta desafíos específicos. \cite{bentivogli2016neural} demostraron que los sistemas NMT tienden a cometer más errores en vocabulario específico de dominio, especialmente con entidades nombradas y términos técnicos. En el contexto de esports, nombres de equipos como "G2 Esports", apodos de jugadores como "NiKo" y términos técnicos del juego deben preservarse sin traducción.
+
+\cite{doherty2012translation} analizan el impacto de errores de traducción automática en sistemas posteriores de procesamiento, concluyendo que errores en entidades nombradas pueden degradar significativamente el rendimiento de sistemas de recuperación de información. Por ello, el preprocesamiento cuidadoso y la validación de traducciones son críticos en este proyecto.
+
+\section{Algoritmos de Búsqueda: BM25}
+
+BM25 (Best Matching 25) es un algoritmo de ranking probabilístico ampliamente utilizado en recuperación de información \cite{robertson2009probabilistic}. Basado en el modelo probabilístico de relevancia de Robertson y Spärck Jones, BM25 mejora TF-IDF mediante la saturación de la frecuencia de términos y la normalización por longitud de documento.
+
+\cite{trotman2014improvements} analizaron diversas variantes de BM25, concluyendo que sigue siendo altamente competitivo frente a métodos de recuperación más modernos, especialmente en corpus de tamaño pequeño a mediano (menos de 100,000 documentos). Para el presente proyecto, con aproximadamente 30 documentos correspondientes a equipos de Counter-Strike, BM25 ofrece un equilibrio óptimo entre eficacia y eficiencia computacional.
+
+\cite{lin2021pretrained} compararon BM25 con métodos de recuperación densos basados en transformers, encontrando que BM25 mantiene ventajas en consultas cortas y cuando el vocabulario de consulta coincide con el vocabulario del corpus, características presentes en preguntas sobre equipos y jugadores específicos.
+
+\section{Brechas Identificadas y Justificación del Proyecto}
+
+La revisión de la literatura revela varias brechas que justifican el presente proyecto:
+
+\begin{itemize}
+    \item \textbf{Ausencia de recursos NLP para esports en español}: La mayoría de trabajos sobre NLP aplicado a esports se centran en inglés, dejando el español desatendido \cite{esports2021nlp}.
+    
+    \item \textbf{Falta de corpus estructurados sobre fichajes}: Aunque existen bases de datos sobre estadísticas de juego, la información sobre movimientos de jugadores entre equipos está dispersa y no estructurada.
+    
+    \item \textbf{Sistemas RAG en dominios de alta actualización}: Los trabajos sobre RAG suelen evaluarse en corpus estáticos (Wikipedia, libros), pero no en dominios con actualizaciones diarias como los esports profesionales.
+    
+    \item \textbf{Traducción automática de contenido especializado}: Pocos estudios abordan la traducción de textos de esports con su vocabulario técnico específico.
+\end{itemize}
+
+Este proyecto contribuye a llenar estas brechas mediante la construcción de un sistema RAG en español basado en datos actualizados de Liquipedia, combinando técnicas de scraping, traducción automática y recuperación de información para un dominio especializado y dinámico.
