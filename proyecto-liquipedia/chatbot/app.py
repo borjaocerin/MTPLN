@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import re
 import sys
@@ -20,9 +21,21 @@ if __package__ in (None, ""):
     PROJECT_ROOT = Path(__file__).resolve().parents[1]
     if str(PROJECT_ROOT) not in sys.path:
         sys.path.insert(0, str(PROJECT_ROOT))
-    from chatbot.ingest import DataIngestionPipeline, DEFAULT_STORE_FILE, DEFAULT_TEAM_URLS, SimplePersistentVectorStore
+    from chatbot.ingest import (
+        DataIngestionPipeline,
+        DEFAULT_DATA_FILE,
+        DEFAULT_STORE_FILE,
+        DEFAULT_TEAM_URLS,
+        SimplePersistentVectorStore,
+    )
 else:
-    from .ingest import DataIngestionPipeline, DEFAULT_STORE_FILE, DEFAULT_TEAM_URLS, SimplePersistentVectorStore
+    from .ingest import (
+        DataIngestionPipeline,
+        DEFAULT_DATA_FILE,
+        DEFAULT_STORE_FILE,
+        DEFAULT_TEAM_URLS,
+        SimplePersistentVectorStore,
+    )
 
 
 class EsportsChatbot:
@@ -30,8 +43,10 @@ class EsportsChatbot:
         self.model_name = model_name or os.getenv("LOCAL_LLM_MODEL", DEFAULT_LOCAL_MODEL)
         self.max_new_tokens = int(os.getenv("LOCAL_MAX_NEW_TOKENS", "96"))
         self.store_path = Path(store_path) if store_path else DEFAULT_STORE_FILE
+        self.data_file = DEFAULT_DATA_FILE
         self.vector_store = SimplePersistentVectorStore.load(self.store_path)
         self.generator = self._load_generator()
+        self.records = self._load_records()
 
     def _load_generator(self):
         try:
@@ -78,8 +93,241 @@ class EsportsChatbot:
                 f"No se pudo cargar el modelo de Hugging Face '{self.model_name}': {exc}"
             ) from exc
 
+    def _load_records(self) -> list[dict]:
+        if not self.data_file.exists():
+            return []
+
+        try:
+            with self.data_file.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (json.JSONDecodeError, OSError):
+            return []
+
+        if isinstance(payload, dict):
+            records = payload.get("documents", []) or payload.get("items", [])
+        else:
+            records = payload
+
+        if not isinstance(records, list):
+            return []
+        return [record for record in records if isinstance(record, dict)]
+
+    def _normalize_text(self, text: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
+
+    def _find_team_record(self, question: str) -> dict | None:
+        normalized_question = self._normalize_text(question)
+        if not normalized_question:
+            return None
+
+        candidates: list[tuple[int, dict]] = []
+        for record in self.records:
+            name = str(record.get("name") or "")
+            normalized_name = self._normalize_text(name)
+            if not normalized_name:
+                continue
+
+            if normalized_name in normalized_question:
+                candidates.append((len(normalized_name), record))
+                continue
+
+            name_tokens = normalized_name.split()
+            if all(token in normalized_question for token in name_tokens):
+                candidates.append((len(normalized_name), record))
+
+        if not candidates:
+            return None
+
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        return candidates[0][1]
+
+    def _parse_requested_count(self, question: str) -> int:
+        match = re.search(r"\b(\d+)\b", question)
+        if not match:
+            return 1
+        return max(1, int(match.group(1)))
+
+    def _is_movement_question(self, question: str) -> bool:
+        q = question.lower()
+        keywords = [
+            "fichaje",
+            "fichajes",
+            "movimiento",
+            "movimientos",
+            "transferencia",
+            "fichar",
+            "venta",
+            "comprar",
+            "bench",
+            "benchado",
+            "roster",
+            "plantilla",
+        ]
+        return any(keyword in q for keyword in keywords)
+
+    def _is_upcoming_tournament_question(self, question: str) -> bool:
+        q = question.lower()
+        keywords = [
+            "torneo",
+            "torneos",
+            "partido",
+            "partidos",
+            "próximo",
+            "proximo",
+            "siguiente",
+            "calendario",
+        ]
+        return any(keyword in q for keyword in keywords)
+
+    def _is_participants_question(self, question: str) -> bool:
+        q = question.lower()
+        keywords = ["participantes", "participan", "equipos", "equipo", "plantel"]
+        tournament_words = ["torneo", "torneos", "major", "iem", "pgl", "blast", "esl"]
+        return any(k in q for k in keywords) and any(t in q for t in tournament_words)
+
+    def _extract_date_from_text(self, text: str) -> str | None:
+        patterns = [
+            r"\b\d{1,2}\s+de\s+[a-záéíóúñü]+\s+20\d{2}\b",
+            r"\b[a-záéíóúñü]+\s+\d{1,2},?\s+20\d{2}\b",
+            r"\b20\d{2}\b",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return match.group(0).strip()
+        return None
+
+    def _extract_tournament_name_from_question(self, question: str) -> str | None:
+        normalized_question = self._normalize_text(question)
+        if not normalized_question:
+            return None
+
+        tournaments = []
+        for record in self.records:
+            for tournament in record.get("tournaments", []) or []:
+                if tournament and isinstance(tournament, str):
+                    tournaments.append(tournament)
+
+        seen = set()
+        unique_names = []
+        for tournament in tournaments:
+            if tournament not in seen:
+                seen.add(tournament)
+                unique_names.append(tournament)
+
+        best_match = None
+        best_score = 0
+        for tournament in unique_names:
+            norm_tournament = self._normalize_text(tournament)
+            if not norm_tournament:
+                continue
+            if norm_tournament in normalized_question:
+                score = len(norm_tournament)
+                if score > best_score:
+                    best_score = score
+                    best_match = tournament
+        return best_match
+
+    def _unique_preserve_order(self, items: list[str]) -> list[str]:
+        seen = set()
+        unique = []
+        for item in items:
+            if item and item not in seen:
+                seen.add(item)
+                unique.append(item)
+        return unique
+
+    def _build_movement_response(self, question: str) -> str | None:
+        record = self._find_team_record(question)
+        if not record:
+            return None
+
+        movements = [m for m in (record.get("movements") or []) if isinstance(m, str) and m.strip()]
+        if not movements:
+            return f"No encontré movimientos registrados para {record.get('name')} en los datos disponibles."
+
+        count = self._parse_requested_count(question)
+        selected = movements[-count:]
+        selected = self._unique_preserve_order(selected)
+
+        lines = []
+        for movement in selected:
+            date = self._extract_date_from_text(movement)
+            if date:
+                description = movement.replace(date, "").strip(" -:;,. ")
+                lines.append(f"{date}: {description}")
+            else:
+                lines.append(movement)
+
+        if len(lines) == 1:
+            return f"El último movimiento de {record.get('name')} es: {lines[0]}"
+
+        return (
+            f"Los últimos {len(lines)} movimientos de {record.get('name')} son:\n"
+            + "\n".join(f"- {line}" for line in lines)
+        )
+
+    def _build_tournament_response(self, question: str) -> str | None:
+        record = self._find_team_record(question)
+        if not record:
+            return None
+
+        tournaments = [t for t in (record.get("tournaments") or []) if isinstance(t, str) and t.strip()]
+        tournaments = self._unique_preserve_order(tournaments)
+        if not tournaments:
+            return f"No encontré torneos asociados a {record.get('name')} en los datos disponibles."
+
+        count = self._parse_requested_count(question)
+        selected = tournaments[:count]
+        if not selected:
+            return None
+
+        if len(selected) == 1:
+            return f"El próximo torneo de {record.get('name')} es {selected[0]}."
+
+        return (
+            f"Los próximos {len(selected)} torneos de {record.get('name')} son:\n"
+            + "\n".join(f"- {t}" for t in selected)
+        )
+
+    def _build_participant_response(self, question: str) -> str | None:
+        tournament = self._extract_tournament_name_from_question(question)
+        if not tournament:
+            return None
+
+        participants = []
+        for record in self.records:
+            for t in (record.get("tournaments") or []) or []:
+                if isinstance(t, str) and tournament.lower() in t.lower():
+                    participants.append(str(record.get("name") or "Desconocido"))
+                    break
+
+        participants = self._unique_preserve_order(participants)
+        if not participants:
+            return f"No encontré ningún equipo participante para el torneo '{tournament}'."
+
+        if len(participants) == 1:
+            return f"El único equipo participante encontrado para {tournament} es {participants[0]}."
+
+        return (
+            f"Los equipos participantes en {tournament} son:\n"
+            + "\n".join(f"- {team}" for team in participants)
+        )
+
+    def _build_generic_team_info(self, question: str) -> str | None:
+        record = self._find_team_record(question)
+        if not record:
+            return None
+
+        full_text = str(record.get("full_text") or record.get("combined_text") or "").strip()
+        if not full_text:
+            return None
+
+        return f"Información de {record.get('name')}: {full_text}"
+
     def load_persisted_data(self) -> bool:
         if self.vector_store.documents:
+            self.records = self._load_records()
             return True
 
         if not self.store_path.exists():
@@ -87,6 +335,7 @@ class EsportsChatbot:
             pipeline_ingest.ingest_batch(DEFAULT_TEAM_URLS)
 
         self.vector_store = SimplePersistentVectorStore.load(self.store_path)
+        self.records = self._load_records()
         return bool(self.vector_store.documents)
 
     def _build_prompt(self, question: str, context_docs: list[dict]) -> str:
@@ -162,17 +411,24 @@ class EsportsChatbot:
         if self.generator is None:
             raise RuntimeError("El modelo local no está disponible; no se puede responder sin LLM.")
 
-        context_docs = self.vector_store.search(question, top_k=8)
-        if self._is_tournament_question(question):
-            tournament_docs = self.vector_store.search(self._build_tournament_query(question), top_k=12)
-            extracted = self._extract_latest_tournament(tournament_docs or context_docs)
-            if extracted:
-                return extracted
-            return (
-                "No encontré evidencia suficiente en el contexto para identificar el último torneo con fiabilidad. "
-                "Indica el equipo (por ejemplo, 'último torneo de G2') y te respondo con precisión."
-            )
+        movement_answer = self._build_movement_response(question) if self._is_movement_question(question) else None
+        if movement_answer:
+            return movement_answer
 
+        participant_answer = self._build_participant_response(question) if self._is_participants_question(question) else None
+        if participant_answer:
+            return participant_answer
+
+        if self._is_upcoming_tournament_question(question):
+            tournament_answer = self._build_tournament_response(question)
+            if tournament_answer:
+                return tournament_answer
+
+        generic_answer = self._build_generic_team_info(question)
+        if generic_answer:
+            return generic_answer
+
+        context_docs = self.vector_store.search(question, top_k=8)
         prompt = self._build_prompt(question, context_docs)
 
         try:

@@ -56,8 +56,10 @@ def _tokenize(text: str) -> list[str]:
 
 
 QUERY_EXPANSIONS: dict[str, list[str]] = {
-    "fichaje": ["fichajes", "fichar", "ficha", "adquiere", "transferencia", "roster", "join", "bench"],
-    "fichajes": ["fichaje", "fichar", "ficha", "adquiere", "transferencia", "roster", "join", "bench"],
+    "fichaje": ["fichajes", "fichar", "ficha", "adquiere", "transferencia", "movimiento", "movimientos", "venta", "roster", "join", "bench"],
+    "fichajes": ["fichaje", "fichar", "ficha", "adquiere", "transferencia", "movimiento", "movimientos", "venta", "roster", "join", "bench"],
+    "movimiento": ["movimiento", "movimientos", "fichaje", "fichajes", "fichar", "venta", "transferencia", "bench", "benching"],
+    "movimientos": ["movimiento", "movimientos", "fichaje", "fichajes", "fichar", "venta", "transferencia", "bench", "benching"],
     "staff": ["organizacion", "organización", "manager", "coach", "entrenador", "entrenadores", "analista"],
     "entrenador": ["coach", "staff", "organizacion", "organización"],
     "torneo": ["torneos", "resultados", "partidos", "logros", "upcoming"],
@@ -194,8 +196,11 @@ class DataIngestionPipeline:
         return str(record.get("url") or metadata.get("url") or "")
 
     def _load_records_from_file(self, file_path: str | Path) -> list[dict]:
-        with Path(file_path).open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
+        try:
+            with Path(file_path).open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (json.JSONDecodeError, ValueError, OSError):
+            return []
 
         if isinstance(payload, dict):
             records = payload.get("documents", []) or payload.get("items", [])
@@ -203,7 +208,7 @@ class DataIngestionPipeline:
             records = payload
 
         if not isinstance(records, list):
-            raise ValueError("El archivo de ingestión no contiene una lista válida de registros.")
+            return []
         return [record for record in records if isinstance(record, dict)]
 
     def _section_from_heading(self, heading: str) -> str:
@@ -279,6 +284,33 @@ class DataIngestionPipeline:
         metadata.setdefault("url", record.get("url") or metadata.get("url") or "")
 
         documents: list[dict] = []
+        movements = record.get("movements", [])
+        if movements:
+            for movement_index, movement_line in enumerate(movements, start=1):
+                line = str(movement_line or "").strip()
+                if not line:
+                    continue
+
+                movement_text = f"{metadata['name']} {line}"
+                cleaned_movement_text = self.cleaner.clean_text(movement_text)
+                if not validate_text_quality(cleaned_movement_text, min_length=30):
+                    continue
+
+                movement_metadata = dict(metadata)
+                movement_metadata["section"] = "movimientos"
+                movement_metadata["chunk_index"] = movement_index
+                movement_metadata["movement_text"] = line
+
+                documents.append(
+                    {
+                        "name": metadata["name"],
+                        "url": metadata["url"],
+                        "text": movement_text,
+                        "clean_text": cleaned_movement_text,
+                        "metadata": movement_metadata,
+                    }
+                )
+
         for chunk_index, (section, section_text) in enumerate(self._split_sections(raw_text), start=1):
             cleaned_text = self.cleaner.clean_text(section_text)
             if not validate_text_quality(cleaned_text, min_length=60):
