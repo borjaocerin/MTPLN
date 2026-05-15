@@ -142,10 +142,44 @@ class EsportsChatbot:
         return candidates[0][1]
 
     def _parse_requested_count(self, question: str) -> int:
-        match = re.search(r"\b(\d+)\b", question)
-        if not match:
+        matches = re.findall(r"\b(\d+)\b", question)
+        if not matches:
             return 1
-        return max(1, int(match.group(1)))
+        for match in matches:
+            num = int(match)
+            if 1 <= num <= 100:
+                return num
+        return 1
+
+    def _extract_year_from_question(self, question: str) -> int | None:
+        match = re.search(r"\b(20\d{2}|19\d{2})\b", question)
+        if match:
+            return int(match.group(1))
+        return None
+
+    def _is_movement_year_question(self, question: str) -> bool:
+        return self._is_movement_question(question) and self._extract_year_from_question(question) is not None
+
+    def _clean_movement_text(self, text: str) -> str:
+        text = re.sub(r"\s*\[\s*\d+\s*\]", "", text)
+        text = re.sub(r'[\"\'“”‘’]', "", text)
+        text = re.sub(r"\s{2,}", " ", text)
+        return text.strip()
+
+    def _format_movement_response_line(self, movement_text: str, team_name: str) -> str:
+        date = self._extract_date_from_text(movement_text)
+        if date:
+            description = self._clean_movement_text(movement_text)
+            return f"el {description}"
+        else:
+            cleaned = self._clean_movement_text(movement_text)
+            return f"{team_name} {cleaned}"
+
+    def _filter_movements_by_year(self, movements: list[str], year: int) -> list[str]:
+        year_str = str(year)
+        filtered = [m for m in movements if year_str in m]
+        return filtered
+
 
     def _is_movement_question(self, question: str) -> bool:
         q = question.lower()
@@ -242,28 +276,38 @@ class EsportsChatbot:
         if not record:
             return None
 
+        team_name = str(record.get('name') or 'Equipo')
         movements = [m for m in (record.get("movements") or []) if isinstance(m, str) and m.strip()]
         if not movements:
-            return f"No encontré movimientos registrados para {record.get('name')} en los datos disponibles."
+            return f"No encontre movimientos registrados para {team_name} en los datos disponibles"
 
-        count = self._parse_requested_count(question)
-        selected = movements[-count:]
+        year = self._extract_year_from_question(question)
+        if year:
+            filtered = self._filter_movements_by_year(movements, year)
+            if not filtered:
+                return f"{team_name} no tiene movimientos registrados en el ano {year}"
+            count = self._parse_requested_count(question)
+            if len(filtered) < count:
+                return (
+                    f"{team_name} tiene {len(filtered)} fichaje(s) en {year}:\n"
+                    + "\n".join(
+                        f"- {self._format_movement_response_line(m, team_name)}"
+                        for m in filtered
+                    )
+                )
+            selected = filtered[-count:]
+        else:
+            count = self._parse_requested_count(question)
+            selected = movements[-count:]
+
         selected = self._unique_preserve_order(selected)
-
-        lines = []
-        for movement in selected:
-            date = self._extract_date_from_text(movement)
-            if date:
-                description = movement.replace(date, "").strip(" -:;,. ")
-                lines.append(f"{date}: {description}")
-            else:
-                lines.append(movement)
+        lines = [self._format_movement_response_line(m, team_name) for m in selected]
 
         if len(lines) == 1:
-            return f"El último movimiento de {record.get('name')} es: {lines[0]}"
+            return f"El último movimiento de {team_name} fue {lines[0]}"
 
         return (
-            f"Los últimos {len(lines)} movimientos de {record.get('name')} son:\n"
+            f"Los últimos {len(lines)} movimientos de {team_name} son:\n"
             + "\n".join(f"- {line}" for line in lines)
         )
 
@@ -283,7 +327,7 @@ class EsportsChatbot:
             return None
 
         if len(selected) == 1:
-            return f"El próximo torneo de {record.get('name')} es {selected[0]}."
+            return f"El próximo torneo de {record.get('name')} es {selected[0]}"
 
         return (
             f"Los próximos {len(selected)} torneos de {record.get('name')} son:\n"
@@ -304,10 +348,10 @@ class EsportsChatbot:
 
         participants = self._unique_preserve_order(participants)
         if not participants:
-            return f"No encontré ningún equipo participante para el torneo '{tournament}'."
+            return f"No encontré ningún equipo participante para el torneo '{tournament}'"
 
         if len(participants) == 1:
-            return f"El único equipo participante encontrado para {tournament} es {participants[0]}."
+            return f"El único equipo participante encontrado para {tournament} es {participants[0]}"
 
         return (
             f"Los equipos participantes en {tournament} son:\n"
@@ -405,7 +449,7 @@ class EsportsChatbot:
         )
         year, name, _, _ = candidates[0]
         clean_name = re.sub(r"\s{2,}", " ", name).strip(" .:-")
-        return f"Según los datos recuperados, el torneo más reciente mencionado es {clean_name} ({year})."
+        return f"Según los datos recuperados, el torneo más reciente mencionado es {clean_name} ({year})"
 
     def answer(self, question: str) -> str:
         if self.generator is None:
