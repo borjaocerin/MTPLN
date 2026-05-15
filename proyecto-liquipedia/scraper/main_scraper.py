@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import json
+import re
 import time
 from datetime import datetime
 from selenium import webdriver
@@ -172,35 +173,163 @@ class LiquipediaTeamScraper:
         text = root.get_text(" ", strip=True)
         return " ".join(text.split())
 
-    def _extract_external_references(self, soup):
-        refs = []
-        root = soup.find("div", id="mw-content-text") or soup.find("body")
-        if not root:
-            return refs
-        for a in root.select("a.external.text"):
-            href = a.get("href", "")
-            if href.startswith("http") and "liquipedia.net" not in href:
-                refs.append({"label": a.get_text(strip=True) or "Fuente", "url": href})
-        # deduplicado por URL conservando orden
-        seen = set()
-        uniq = []
-        for ref in refs:
-            if ref["url"] in seen:
+    def _extract_first_paragraph(self, soup):
+        if not soup:
+            return ""
+
+        container = soup.find(
+            "div",
+            class_=lambda c: c and "mw-content-ltr" in c and "mw-parser-output" in c,
+            lang="en",
+            dir="ltr",
+        )
+        if not container:
+            container = soup.find(
+                "div",
+                class_=lambda c: c and "mw-content-ltr" in c and "mw-parser-output" in c,
+            )
+        if not container:
+            return ""
+
+        paragraph = container.find("p")
+        if not paragraph:
+            return ""
+
+        text = paragraph.get_text(" ", strip=True)
+        return " ".join(text.split())
+
+    def _normalize_movement_year(self, text: str, year: str | None) -> str:
+        if not year or year in text:
+            return text
+
+        text = text.strip()
+
+        english_match = re.match(r"^([A-Za-z]+ \d{1,2}(?:st|nd|rd|th)?)(.*)$", text)
+        if english_match:
+            date_part = english_match.group(1)
+            rest = english_match.group(2)
+            return f"{date_part} {year}{rest}"
+
+        spanish_match = re.match(r"^(\d{1,2}(?:st|nd|rd|th)? de [A-Za-záéíóúñü]+)(.*)$", text, flags=re.IGNORECASE)
+        if spanish_match:
+            date_part = spanish_match.group(1)
+            rest = spanish_match.group(2)
+            return f"{date_part} {year}{rest}"
+
+        return f"{text} ({year})"
+
+    def _extract_tournaments(self, soup):
+        if not soup:
+            return []
+
+        tournaments_section = soup.find("div", class_="tournaments-list-type-list")
+        if not tournaments_section:
+            return []
+
+        tournaments = []
+        for item in tournaments_section.find_all("div", class_=lambda c: c and "tournaments-list-item" in c):
+            name_div = item.find("div", class_="tournaments-list-item__name")
+            if not name_div:
                 continue
-            seen.add(ref["url"])
-            uniq.append(ref)
-        return uniq
+
+            link = name_div.find("a")
+            if link and link.get_text(strip=True):
+                tournaments.append(link.get_text(strip=True))
+                continue
+
+            text = name_div.get_text(" ", strip=True)
+            if text:
+                tournaments.append(text)
+
+        return tournaments
+
+    def extract_movements(self, soup):
+        """Extrae los movimientos del equipo cuando 'Show All' está activo."""
+        show_all = soup.find('li', class_='show-all active')
+        if not show_all:
+            return []
+
+        tabs_content = soup.find('div', class_='tabs-content')
+        if not tabs_content:
+            return []
+
+        movements = []
+        for section in tabs_content.find_all('div', class_=lambda c: c and c.startswith('content')):
+            year = None
+            header = section.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+            if header:
+                span = header.find('span')
+                if span and span.get_text(strip=True).isdigit():
+                    year = span.get_text(strip=True)
+                else:
+                    header_text = header.get_text(" ", strip=True)
+                    if header_text.isdigit():
+                        year = header_text
+
+            for li in section.find_all('li'):
+                text = li.get_text(separator=' ', strip=True)
+                text = re.sub(r'\[\d+\]', '', text)
+                text = ' '.join(text.split())
+                text = self._normalize_movement_year(text, year)
+                text = self.traducir(text)
+                movements.append(text)
+
+        if not movements:
+            for ul in tabs_content.find_all('ul'):
+                for li in ul.find_all('li'):
+                    text = li.get_text(separator=' ', strip=True)
+                    text = re.sub(r'\[\d+\]', '', text)
+                    text = ' '.join(text.split())
+                    text = self.traducir(text)
+                    movements.append(text)
+
+        return movements
 
     def scrape_team_page(self, url):
         """Extrae información de una página de equipo en Liquipedia."""
-        soup = self.get_soup(url)
+        print(f"   [!] Abriendo navegador para: {url}")
+        try:
+            # Crear driver nuevo para cada URL
+            self.driver = self._create_driver()
+            self.driver.set_page_load_timeout(20)
+            
+            self.driver.get(url)
+            # Hacer scroll hacia abajo para disparar la carga de elementos dinámicos
+            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
+            time.sleep(1)
+            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
+            
+            # Activar "Show All" si existe y no está activo
+            try:
+                show_all_li = self.driver.find_element(By.XPATH, "//li[contains(@class, 'show-all')]")
+                if 'active' not in show_all_li.get_attribute('class'):
+                    # Hacer scroll hasta el elemento para que sea clickable
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", show_all_li)
+                    time.sleep(1)
+                    show_all_link = show_all_li.find_element(By.TAG_NAME, 'a')
+                    # Usar JavaScript click para evitar intercepciones
+                    self.driver.execute_script("arguments[0].click();", show_all_link)
+                    time.sleep(2)  # Esperar a que cargue el contenido
+            except Exception as e:
+                print(f"   [!] No se pudo activar 'Show All': {e}")
+            
+            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+        except Exception as e:
+            print(f"   [!] Error al cargar página: {e}")
+            return None
+        finally:
+            # Limpiar driver
+            self.cleanup()
+        
         if not soup:
             return None
 
-        full_text = self._extract_full_text(soup)
+        full_text = self._extract_first_paragraph(soup)
         infobox = self._extract_infobox(soup)
         name = self._extract_title(soup)
-        external_refs = self._extract_external_references(soup)
+        movements = self.extract_movements(soup)
+        tournaments = self._extract_tournaments(soup)
 
         return {
             "type": "team",
@@ -208,7 +337,8 @@ class LiquipediaTeamScraper:
             "name": name,
             "infobox": infobox,
             "full_text": full_text,
-            "external_references": external_refs,
+            "movements": movements,
+            "tournaments": tournaments,
             "extracted_at": datetime.now().isoformat(),
             "combined_text": f"{name}. {full_text}",
         }

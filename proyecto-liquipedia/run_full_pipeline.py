@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Script principal para ejecutar la ingesta de equipos y abrir el chatbot."""
 
+import json
 import sys
 from pathlib import Path
+from typing import Sequence
 
 # Agregar raíz del proyecto al path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -20,6 +22,7 @@ def run_quick_ingest():
         print(f"\nTeams: {len(DEFAULT_TEAM_URLS)}")
         docs = pipeline.ingest_batch(DEFAULT_TEAM_URLS)
         print(f"\n✅ Documentos ingestados: {len(docs)}")
+        _print_movements_summary(DEFAULT_TEAM_URLS, pipeline.data_file)
     finally:
         pipeline.cleanup()
 
@@ -45,6 +48,7 @@ def run_massive_ingest(sources_file):
         print(f"\nTeams: {len(team_urls)}")
         docs = pipeline.ingest_batch(team_urls)
         print(f"\n✅ Documentos ingestados: {len(docs)}")
+        _print_movements_summary(team_urls, pipeline.data_file)
     finally:
         pipeline.cleanup()
 
@@ -65,8 +69,59 @@ def run_limited_ingest(max_teams):
         print(f"\nTeams: {len(teams)}")
         docs = pipeline.ingest_batch(teams)
         print(f"\n✅ Documentos ingestados: {len(docs)}")
+        _print_movements_summary(teams, pipeline.data_file)
     finally:
         pipeline.cleanup()
+
+
+def _load_ingest_records(data_file: Path) -> list[dict]:
+    try:
+        with data_file.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        return []
+
+    if isinstance(payload, dict):
+        records = payload.get("documents", []) or payload.get("items", []) or []
+    else:
+        records = payload
+
+    if not isinstance(records, list):
+        return []
+
+    return [record for record in records if isinstance(record, dict)]
+
+
+def _print_movements_summary(team_urls: Sequence[str] | None, data_file: Path) -> None:
+    if not data_file.exists():
+        print("\n⚠️ No existe el archivo de ingestión para mostrar movimientos.")
+        return
+
+    records = _load_ingest_records(data_file)
+    if not records:
+        print("\n⚠️ El archivo de ingestión no contiene registros válidos.")
+        return
+
+    selected_records = records
+    if team_urls:
+        lookup = {str(record.get("url") or ""): record for record in records}
+        selected_records = [lookup[url] for url in team_urls if url in lookup]
+
+    if not selected_records:
+        print("\n⚠️ No se encontraron registros de los equipos solicitados en el archivo de ingestión.")
+        return
+
+    print("\nMovimientos extraídos por equipo:")
+    total_movements = 0
+    for record in selected_records:
+        url = record.get("url") or "<sin-url>"
+        name = record.get("name") or record.get("metadata", {}).get("name") or "Desconocido"
+        movements = record.get("movements") or []
+        count = len(movements) if isinstance(movements, list) else 0
+        total_movements += count
+        print(f" - {name} ({url}): {count} movimiento(s)")
+
+    print(f"\nTotal movimientos en registros listados: {total_movements}")
 
 
 def run_custom_ingest(teams):
@@ -81,6 +136,7 @@ def run_custom_ingest(teams):
         print(f"\nTeams: {len(teams)}")
         docs = pipeline.ingest_batch(teams)
         print(f"\n✅ Documentos ingestados: {len(docs)}")
+        _print_movements_summary(teams, pipeline.data_file)
     finally:
         pipeline.cleanup()
 
