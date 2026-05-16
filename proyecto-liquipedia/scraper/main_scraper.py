@@ -196,6 +196,7 @@ class LiquipediaTeamScraper:
             return ""
 
         text = paragraph.get_text(" ", strip=True)
+        text = self.traducir(text)
         return " ".join(text.split())
 
     def _normalize_movement_year(self, text: str, year: str | None) -> str:
