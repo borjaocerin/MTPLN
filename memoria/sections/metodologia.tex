@@ -1,20 +1,385 @@
-﻿\chapter{Metodología}
+﻿\chapter{Metodología}%
 \label{ch:metodologia}
 
-Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+Este capítulo describe la metodología completa implementada para la construcción del sistema conversacional basado en RAG (Retrieval-Augmented Generation). El sistema integra técnicas de web scraping, preprocesamiento lingüístico, recuperación de información y generación de lenguaje natural para proporcionar respuestas contextualizadas sobre equipos profesionales de Counter-Strike. La arquitectura se diseñó priorizando modularidad, reproducibilidad y eficiencia computacional.
 
-\section{Preprocesamiento}
+\section{Descripción General del Sistema}
+
+El sistema implementado sigue un pipeline secuencial de cuatro etapas principales:
+
+\begin{enumerate}
+    \item \textbf{Adquisición de datos}: Web scraping automatizado de Liquipedia mediante Selenium WebDriver, con extracción de contenido HTML y referencias externas.
+    \item \textbf{Preprocesamiento}: Limpieza de artefactos HTML, normalización de texto, traducción automática al español y validación de calidad.
+    \item \textbf{Indexación RAG}: Construcción de un índice de recuperación basado en BM25 con tokenización personalizada y expansión de consultas específica del dominio.
+    \item \textbf{Generación conversacional}: Sistema de pregunta-respuesta que combina recuperación semántica con modelos de lenguaje causal para generar respuestas contextualizadas.
+\end{enumerate}
+
+Esta arquitectura modular permite independizar cada componente, facilitando la depuración, evaluación y mejora iterativa del sistema. El diseño prioriza soluciones léxicas y determinísticas sobre modelos de aprendizaje profundo para garantizar reproducibilidad, interpretabilidad y bajo coste computacional.
+
+\section{Preprocesamiento}%
 \label{sec:preprocesamiento}
 
-Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+El preprocesamiento constituye una fase crítica que determina la calidad del corpus utilizado para la recuperación de información. El pipeline implementado aborda tres desafíos principales: extracción robusta de contenido dinámico, limpieza de ruido HTML y traducción automática al español.
 
-\section{Arquitectura}
+\subsection{Web Scraping con Selenium}
+
+La extracción de datos de Liquipedia requiere manejar contenido cargado dinámicamente mediante JavaScript, especialmente tablas de transferencias y estadísticas. La clase \texttt{LiquipediaTeamScraper} implementa una solución basada en Selenium WebDriver con las siguientes características:
+
+\subsubsection{Gestión de Drivers Efímeros}
+
+Para evitar fugas de memoria y errores de estado, se implementó un patrón de driver efímero: cada URL procesada crea una nueva instancia de ChromeDriver en modo headless, ejecuta el scraping y destruye el driver inmediatamente después. Este diseño sacrifica velocidad de procesamiento por estabilidad y reproducibilidad.
+
+\begin{verbatim}
+def _create_driver(self):
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    return webdriver.Chrome(options=options)
+\end{verbatim}
+
+\subsubsection{Scroll Automatizado}
+
+Liquipedia utiliza lazy loading para tablas de transferencias. Para garantizar que el contenido completo se renderiza, se implementó un patrón de scroll progresivo:
+
+\begin{verbatim}
+driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
+time.sleep(1)
+driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+time.sleep(1)
+\end{verbatim}
+
+Este enfoque asegura que elementos dinámicos se carguen completamente antes de extraer el HTML con BeautifulSoup4.
+
+\subsubsection{Extracción de Referencias Externas}
+
+Además del contenido textual, el scraper extrae referencias a fuentes externas (Twitter, HLTV, VLR.gg) que validan la información. La función \texttt{extract\_transfer\_references} filtra dominios válidos y descarta enlaces de navegación o spam.
+
+\subsection{Limpieza de Texto}
+
+La clase \texttt{TextCleaner} implementa un pipeline de limpieza multi-etapa para eliminar ruido típico de contenido web:
+
+\subsubsection{Eliminación de Referencias Numéricas}
+
+Las referencias bibliográficas en formato \texttt{[1]}, \texttt{[23]} se eliminan mediante expresiones regulares para evitar ruido en el índice de búsqueda:
+
+\begin{verbatim}
+r"\[\d+\]"  # referencias tipo [1], [23]
+\end{verbatim}
+
+\subsubsection{Blacklist de Contenido No Informativo}
+
+Se mantiene una lista negra de patrones frecuentes en contenido web que no aportan información relevante:
+
+\begin{itemize}
+    \item Avisos de cookies y privacidad (``cookie'', ``privacy policy'')
+    \item Mensajes de verificación (``verificar que no eres un bot'')
+    \item Boilerplate legal (``all rights reserved'', ``derechos reservados'')
+    \item Elementos de navegación (``newsletter'', ``suscríbete'')
+\end{itemize}
+
+Estos patrones se eliminan mediante búsqueda case-insensitive antes de indexar el texto.
+
+\subsubsection{Validación de Calidad}
+
+La función \texttt{validate\_text\_quality} descarta fragmentos de texto que no cumplen criterios mínimos:
+
+\begin{itemize}
+    \item \textbf{Longitud mínima}: 50 caracteres (ajustable)
+    \item \textbf{Ratio alfabético}: Al menos 45\% de caracteres alfabéticos sobre el total
+\end{itemize}
+
+Esta validación elimina fragmentos corruptos, códigos JavaScript residuales o contenido no textual que podría contaminar el índice.
+
+\subsection{Traducción Automática}
+
+La traducción del inglés al español se realiza mediante la biblioteca \texttt{deep-translator}, que utiliza la API de Google Translate. Para evitar errores por límites de caracteres y preservar contexto semántico, se implementó una estrategia de traducción por chunks con solapamiento.
+
+\subsubsection{Limitaciones y Consideraciones}
+
+La traducción automática introduce dos tipos de errores:
+
+\begin{enumerate}
+    \item \textbf{Jerga técnica}: Términos como ``clutch'', ``entry fragger'', ``eco round'' pueden traducirse incorrectamente. Se requiere un glosario de términos técnicos que se preserve sin traducir.
+    \item \textbf{Fragmentación de contexto}: La división en chunks de 1000 caracteres puede romper contexto semántico en oraciones largas.
+\end{enumerate}
+
+Para mitigar estos problemas, se filtran traducciones obvias de jerga técnica mediante reglas heurísticas post-procesamiento.
+
+\section{Arquitectura del Sistema RAG}%
 \label{sec:arquitectura}
 
-Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.
+El sistema implementado sigue el paradigma RAG (Retrieval-Augmented Generation)~\cite{lewis2020retrieval}, que combina recuperación de información con generación de lenguaje natural. La arquitectura consta de tres componentes principales: almacén vectorial, motor de recuperación y generador conversacional.
 
-\section{Métricas}
+\subsection{Almacén Vectorial y Tokenización}
+
+La clase \texttt{SimplePersistentVectorStore} implementa un índice de recuperación basado en BM25~\cite{robertson2009probabilistic} sin dependencias de bibliotecas externas pesadas. El almacén mantiene:
+
+\begin{itemize}
+    \item \textbf{Documentos originales}: Texto completo con metadatos (nombre del equipo, URL, fecha)
+    \item \textbf{Tokens por documento}: Tokenización mediante expresión regular Unicode-aware
+    \item \textbf{Frecuencias de términos}: Contadores de términos por documento para BM25
+    \item \textbf{Estadísticas globales}: Longitud promedio de documento y frecuencia documental de términos
+\end{itemize}
+
+\subsubsection{Tokenización Específica del Dominio}
+
+La función de tokenización implementada es:
+
+\begin{verbatim}
+def _tokenize(text: str) -> list[str]:
+    return re.findall(r"[\wáéíóúñü]+", text.lower(), flags=re.UNICODE)
+\end{verbatim}
+
+Esta expresión regular:
+\begin{itemize}
+    \item Preserva caracteres Unicode del español (tildes, eñes)
+    \item Convierte a minúsculas para normalizar variaciones
+    \item Elimina puntuación pero preserva números (importantes para años y estadísticas)
+    \item No elimina stopwords automáticamente (delegado al algoritmo BM25)
+\end{itemize}
+
+\subsection{Expansión de Consultas}
+
+Para mejorar la recuperación, se implementó un diccionario de expansión de consultas específico del dominio de esports:
+
+\begin{verbatim}
+QUERY_EXPANSIONS = {
+    "fichaje": ["fichajes", "fichar", "adquiere", "transferencia", 
+                "movimiento", "roster", "join", "bench"],
+    "staff": ["organizacion", "manager", "coach", "entrenador"],
+    "torneo": ["torneos", "resultados", "partidos", "logros"],
+}
+\end{verbatim}
+
+Esta expansión permite que consultas como ``fichajes de G2'' recuperen documentos que mencionen ``transferencias'', ``roster changes'' o ``movimientos'', aumentando la cobertura sin sacrificar precisión.
+
+\subsection{Algoritmo BM25 para Recuperación}
+
+El motor de recuperación implementa BM25 (Best Matching 25), un algoritmo probabilístico de ranking que extiende TF-IDF con normalización por longitud de documento. La fórmula implementada es:
+
+\[
+\mathrm{BM25}(D, Q) = \sum_{t \in Q} \mathrm{IDF}(t) \cdot \frac{f(t, D) \cdot (k_1 + 1)}{f(t, D) + k_1 \cdot (1 - b + b \cdot \frac{|D|}{\mathrm{avgdl}})}
+\]
+
+Donde:
+\begin{itemize}
+    \item $D$ es el documento, $Q$ es la consulta
+    \item $f(t, D)$ es la frecuencia del término $t$ en el documento $D$
+    \item $|D|$ es la longitud del documento en tokens
+    \item $\mathrm{avgdl}$ es la longitud promedio de documentos
+    \item $k_1 = 1.5$ (parámetro de saturación de frecuencia de términos)
+    \item $b = 0.75$ (parámetro de normalización por longitud)
+    \item $\mathrm{IDF}(t) = \log \frac{N - df(t) + 0.5}{df(t) + 0.5}$ (Inverse Document Frequency)
+\end{itemize}
+
+Los valores de $k_1$ y $b$ son estándares en la literatura~\cite{robertson2009probabilistic}. BM25 tiene ventajas sobre TF-IDF simple:
+
+\begin{enumerate}
+    \item \textbf{Saturación de frecuencia}: Términos muy frecuentes no dominan desproporcionadamente
+    \item \textbf{Normalización por longitud}: Documentos largos no tienen ventaja injusta
+    \item \textbf{Sin necesidad de entrenamiento}: Algoritmo determinístico sin parámetros aprendidos
+\end{enumerate}
+
+\subsection{Pipeline de Ingesta}
+
+La clase \texttt{DataIngestionPipeline} orquesta el flujo completo desde scraping hasta indexación:
+
+\begin{enumerate}
+    \item \textbf{Scraping}: Extrae contenido de URLs de equipos con Selenium
+    \item \textbf{Limpieza}: Aplica \texttt{TextCleaner} y validación de calidad
+    \item \textbf{Persistencia}: Guarda datos limpios en JSON (\texttt{latest\_ingest.json})
+    \item \textbf{Tokenización e indexación}: Carga documentos en \texttt{SimplePersistentVectorStore}
+    \item \textbf{Serialización}: Guarda índice BM25 en \texttt{store.json}
+\end{enumerate}
+
+Este pipeline es idempotente: ejecutar múltiples veces con las mismas URLs produce el mismo resultado, facilitando reproducibilidad.
+
+\subsection{Generador Conversacional}
+
+El componente final del sistema es la clase \texttt{EsportsChatbot}, que integra recuperación con generación de lenguaje natural.
+
+\subsubsection{Arquitectura del Generador}
+
+El chatbot utiliza modelos de lenguaje causal preentrenados de Hugging Face Transformers. Por defecto, se utiliza \texttt{Qwen/Qwen2.5-0.5B-Instruct}, un modelo compacto (500M parámetros) optimizado para instrucciones conversacionales. El modelo puede ejecutarse:
+
+\begin{itemize}
+    \item \textbf{En GPU}: Con \texttt{torch.float16} y \texttt{device\_map="auto"} para aceleración
+    \item \textbf{En CPU}: Con \texttt{torch.float32} para compatibilidad sin hardware especializado
+\end{itemize}
+
+\subsubsection{Flujo de Generación RAG}
+
+El proceso de generación sigue estos pasos:
+
+\begin{enumerate}
+    \item \textbf{Recuperación}: Dado una consulta del usuario, se ejecuta búsqueda BM25 con expansión de términos para recuperar los $k$ documentos más relevantes (por defecto $k=4$).
+    
+    \item \textbf{Construcción del prompt}: Se construye un prompt estructurado que incluye:
+    \begin{itemize}
+        \item Instrucciones del sistema (rol del chatbot)
+        \item Contexto recuperado (fragmentos de los $k$ documentos)
+        \item Consulta del usuario
+    \end{itemize}
+    
+    \item \textbf{Generación}: El modelo de lenguaje genera una respuesta condicionada al prompt completo, limitada a \texttt{max\_new\_tokens} (por defecto 96 tokens).
+    
+    \item \textbf{Post-procesamiento}: La respuesta se limpia eliminando repeticiones o fragmentos incompletos.
+\end{enumerate}
+
+\subsubsection{Gestión de Contexto}
+
+Para evitar que el contexto exceda la ventana del modelo, se implementaron dos estrategias:
+
+\begin{itemize}
+    \item \textbf{Truncado de documentos}: Cada documento recuperado se trunca a los primeros 350 caracteres, priorizando información al inicio del texto.
+    \item \textbf{Límite de documentos}: Se recuperan máximo 4 documentos, equilibrando contexto suficiente con eficiencia computacional.
+\end{itemize}
+
+\subsection{Diagrama de Arquitectura}
+
+La Figura~\ref{fig:arquitectura_rag} muestra el flujo completo del sistema:
+
+\begin{figure}[ht]
+\centering
+\fbox{\begin{minipage}{0.85\textwidth}
+\centering
+\vspace{5cm}
+\textit{[Placeholder: Diagrama de arquitectura del sistema RAG]}\\
+\textit{Flujo: Usuario $\rightarrow$ Query $\rightarrow$ BM25 Search $\rightarrow$ Top-k Docs $\rightarrow$ Prompt Construction $\rightarrow$ LLM $\rightarrow$ Response}
+\vspace{5cm}
+\end{minipage}}
+\caption{Arquitectura del sistema RAG implementado. El flujo integra recuperación léxica (BM25) con generación neural (Transformers) para respuestas contextualizadas.}%
+\label{fig:arquitectura_rag}
+\end{figure}
+
+\subsection{Consideraciones de Diseño}
+
+El diseño del sistema prioriza:
+
+\begin{itemize}
+    \item \textbf{Interpretabilidad}: BM25 produce scores explicables; se puede auditar qué documentos se recuperaron y por qué.
+    \item \textbf{Eficiencia}: Modelos pequeños (500M parámetros) permiten ejecución en hardware modesto.
+    \item \textbf{Reproducibilidad}: Pipeline determinístico sin aleatoriedad (salvo generación del LLM, que puede fijarse con seed).
+    \item \textbf{Modularidad}: Cada componente (scraper, cleaner, vector store, generator) es independiente y puede mejorarse aisladamente.
+\end{itemize}
+
+\section{Métricas de Evaluación}%
 \label{sec:metricas}
 
-Lorem ipsum dolor sit amet, consectetur adipiscing elit. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+La evaluación del sistema RAG requiere métricas que midan tanto la calidad de recuperación como la calidad de generación. Se seleccionaron dos métricas complementarias documentadas ampliamente en la literatura de sistemas de pregunta-respuesta.
+
+\subsection{BERTScore para Evaluación Semántica}
+
+BERTScore~\cite{zhang2019bertscore} evalúa la similitud semántica entre texto generado y referencias mediante representaciones contextuales de BERT. A diferencia de métricas léxicas como BLEU o ROUGE, BERTScore captura similitud semántica incluso cuando la formulación difiere.
+
+\subsubsection{Ventajas para este Proyecto}
+
+\begin{itemize}
+    \item \textbf{Robustez a paráfrasis}: Respuestas correctas pero reformuladas no se penalizan injustamente
+    \item \textbf{Sensibilidad contextual}: Términos técnicos de esports se evalúan considerando su contexto semántico
+    \item \textbf{Alineación con evaluación humana}: Estudios demuestran alta correlación con juicios humanos de calidad~\cite{zhang2019bertscore}
+\end{itemize}
+
+\subsubsection{Fórmula y Cálculo}
+
+BERTScore calcula precisión, recall y F1 comparando embeddings de tokens:
+
+\[
+\mathrm{Precision} = \frac{1}{|x|} \sum_{x_i \in x} \max_{y_j \in y} \mathrm{cos}(\mathbf{e}_{x_i}, \mathbf{e}_{y_j})
+\]
+
+\[
+\mathrm{Recall} = \frac{1}{|y|} \sum_{y_j \in y} \max_{x_i \in x} \mathrm{cos}(\mathbf{e}_{x_i}, \mathbf{e}_{y_j})
+\]
+
+\[
+\mathrm{F1} = 2 \cdot \frac{\mathrm{Precision} \cdot \mathrm{Recall}}{\mathrm{Precision} + \mathrm{Recall}}
+\]
+
+Donde $\mathbf{e}_{x_i}$ y $\mathbf{e}_{y_j}$ son embeddings contextuales de BERT para tokens de la predicción ($x$) y referencia ($y$).
+
+\subsection{MRR para Evaluación de Recuperación}
+
+Mean Reciprocal Rank (MRR) es una métrica estándar en recuperación de información que mide en qué posición aparece el primer documento relevante:
+
+\[
+\mathrm{MRR} = \frac{1}{|Q|} \sum_{i=1}^{|Q|} \frac{1}{\mathrm{rank}_i}
+\]
+
+Donde $\mathrm{rank}_i$ es la posición del primer documento relevante para la consulta $i$.
+
+\subsubsection{Interpretación}
+
+\begin{itemize}
+    \item \textbf{MRR = 1.0}: El documento relevante siempre aparece en primera posición (ideal)
+    \item \textbf{MRR = 0.5}: El documento relevante aparece típicamente en segunda posición
+    \item \textbf{MRR < 0.25}: El documento relevante aparece más allá de la cuarta posición (pobre)
+\end{itemize}
+
+\subsubsection{Relevancia para Sistemas RAG}
+
+En un sistema RAG, MRR mide si el módulo de recuperación proporciona contexto relevante al generador. Un MRR alto ($>0.5$) garantiza que el generador tenga acceso a información correcta en las primeras posiciones, crítico para respuestas precisas.
+
+\subsection{Conjunto de Evaluación}
+
+Se construyó un conjunto de evaluación con 4 consultas representativas del dominio:
+
+\begin{table}[ht]
+\centering
+\caption{Consultas de evaluación del sistema}%
+\label{tab:consultas_eval}
+\begin{tabular}{llc}
+\hline
+\textbf{Consulta} & \textbf{Equipo Relevante} & \textbf{Tipo} \\
+\hline
+¿Qué organización cambió de nombre desde Monarchs? & 9INE & Histórico \\
+¿Qué equipo fichó a un analista en nov. 2023? & 3DMAX & Staff \\
+¿Qué equipo adquirió a Rainwaker en 2023? & 500 & Fichaje \\
+¿Qué organización firmó a Looking4Org en 2023? & 3DMAX & Fichaje \\
+\hline
+\end{tabular}
+\end{table}
+
+Estas consultas cubren diferentes aspectos: cambios organizacionales, movimientos de staff técnico y fichajes de jugadores, con variaciones temporales específicas.
+
+\subsection{Protocolo de Evaluación}
+
+El protocolo de evaluación implementado es:
+
+\begin{enumerate}
+    \item \textbf{Carga del sistema}: Inicializar vector store con documentos indexados
+    \item \textbf{Para cada consulta}:
+    \begin{itemize}
+        \item Ejecutar búsqueda BM25 recuperando top-5 documentos
+        \item Registrar posición del documento relevante (para MRR)
+        \item Extraer fragmento del documento en primera posición (para BERTScore)
+    \end{itemize}
+    \item \textbf{Cálculo de métricas}:
+    \begin{itemize}
+        \item MRR: Promedio de recíprocos de ranks
+        \item BERTScore: Comparar fragmentos recuperados con referencias de referencia
+    \end{itemize}
+    \item \textbf{Análisis}: Identificar consultas con bajo rendimiento para mejora iterativa
+\end{enumerate}
+
+\subsection{Justificación de Selección de Métricas}
+
+La combinación de BERTScore y MRR proporciona una evaluación completa:
+
+\begin{itemize}
+    \item \textbf{MRR evalúa recuperación}: ¿El sistema encuentra el documento correcto?
+    \item \textbf{BERTScore evalúa generación}: ¿El contenido recuperado es semánticamente correcto?
+\end{itemize}
+
+Métricas alternativas como BLEU (orientada a traducción automática) o exactitud (binaria) serían inadecuadas porque:
+
+\begin{itemize}
+    \item BLEU penaliza reformulaciones válidas
+    \item Exactitud no captura calidad gradual de respuestas parcialmente correctas
+    \item ROUGE se enfoca en overlap léxico, perdiendo similitud semántica
+\end{itemize}
+
+Los resultados cuantitativos de la evaluación se presentan en el Capítulo~\ref{ch:eda}, donde se obtuvo MRR=0.5208 y BERTScore F1=0.2809, indicando capacidad de recuperación aceptable pero margen de mejora en similitud semántica profunda.
 

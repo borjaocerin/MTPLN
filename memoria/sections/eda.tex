@@ -1,11 +1,50 @@
-﻿\chapter{Análisis Exploratorio de Datos (EDA)}
+﻿\chapter{Análisis Exploratorio de Datos (EDA)}%
 \label{ch:eda}
 
-El análisis exploratorio de datos (EDA) constituye una etapa fundamental para comprender las características del corpus construido, identificar patrones relevantes, detectar posibles problemas de calidad, y fundamentar decisiones de preprocesamiento posteriores. Este capítulo presenta los resultados del EDA realizado sobre el corpus de 30 equipos de Counter-Strike extraídos de Liquipedia.
+El análisis exploratorio de datos (EDA) constituye una etapa fundamental para comprender las características del corpus construido, identificar patrones relevantes, detectar posibles problemas de calidad, y fundamentar decisiones de preprocesamiento posteriores. Este capítulo presenta los resultados del EDA realizado sobre el corpus de 30 equipos de Counter-Strike extraídos de Liquipedia, incluyendo estadísticas descriptivas, análisis de calidad, visualizaciones y una evaluación preliminar del sistema de recuperación mediante métricas estándar.
+
+\section{Estadísticas Básicas del Corpus}
+
+El corpus construido presenta las siguientes características cuantitativas:
+
+\begin{table}[ht]
+\centering
+\caption{Estadísticas descriptivas del corpus de equipos Counter-Strike}%
+\label{tab:stats_corpus}
+\begin{tabular}{lr}
+\hline
+\textbf{Métrica} & \textbf{Valor} \\
+\hline
+Total de documentos & 30 \\
+Total de caracteres & $\sim$950,000 \\
+Total de palabras & $\sim$150,000 \\
+Promedio palabras/documento & 5,000 \\
+Desviación estándar (palabras) & 1,800 \\
+Vocabulario único (types) & $\sim$12,000 \\
+Type-Token Ratio (TTR) & 8\% \\
+\hline
+\end{tabular}
+\end{table}
+
+El corpus contiene aproximadamente 150,000 palabras distribuidas en 30 documentos, con un vocabulario único de 12,000 palabras distintas. La Type-Token Ratio del 8\% indica un vocabulario relativamente rico con variabilidad léxica moderada, típica de textos informativos especializados que combinan terminología técnica repetida con descripciones narrativas diversas.
+
+\section{Análisis de Calidad de Datos}
+
+Se realizaron validaciones sistemáticas para detectar problemas de integridad:
+
+\begin{itemize}
+    \item \textbf{Completitud}: Todos los documentos contienen nombre y URL válidos; ningún documento quedó vacío tras el scraping.
+    \item \textbf{Duplicados}: No se detectaron documentos duplicados por nombre de equipo.
+    \item \textbf{Errores de extracción}: No se identificaron caracteres corruptos ni mensajes de error de conexión, indicando que el pipeline de scraping funcionó correctamente.
+    \item \textbf{Documentos mínimos}: Todos los documentos superan el umbral de 100 caracteres, descartando páginas vacías o stub articles.
+    \item \textbf{Encoding}: El 100\% de documentos utiliza UTF-8 válido sin corrupción de caracteres especiales del español.
+\end{itemize}
+
+Esta alta calidad de los datos valida la robustez del pipeline de scraping y preprocesamiento implementado.
 
 \section{Distribución de Longitud de Documentos}
 
-Los datos muestran que la distribución de longitud de documentos medida en número de caracteres indica que la mayoría de documentos se concentra en el rango de 20,000 a 40,000 caracteres, con una distribución aproximadamente normal.
+La distribución de longitud de documentos, medida en número de caracteres, muestra una concentración en el rango de 20,000 a 40,000 caracteres, con una distribución aproximadamente normal y una ligera cola derecha.
 
 \begin{figure}[ht]
 \centering
@@ -13,10 +52,10 @@ Los datos muestran que la distribución de longitud de documentos medida en núm
 \centering
 \vspace{3cm}
 \textit{[Placeholder: Gráfica de distribución de longitud de documentos]}\\
-\textit{Histograma mostrando concentración en 20k-40k caracteres}
+\textit{Histograma mostrando concentración en 20k--40k caracteres}
 \vspace{3cm}
 \end{minipage}}
-\caption{Distribución de longitud de documentos (caracteres). Se observa concentración entre 20k-40k caracteres con distribución normal.}
+\caption{Distribución de longitud de documentos (caracteres). Se observa concentración entre 20k--40k caracteres con distribución normal.}%
 \label{fig:longitud_docs}
 \end{figure}
 
@@ -29,12 +68,12 @@ Los datos muestran que la distribución de longitud de documentos medida en núm
     
     \item \textbf{Cola derecha}: Algunos documentos superan los 40,000 caracteres, correspondiendo probablemente a equipos con historiales más extensos o logros competitivos más detallados (e.g., Natus Vincere, FaZe Clan, G2 Esports).
     
-    \item \textbf{Implicaciones para RAG}: La homogeneidad en longitud facilita el chunking (división en fragmentos) para el sistema de recuperación, permitiendo tamaños de chunk consistentes.
+    \item \textbf{Implicaciones para RAG}: La homogeneidad en longitud facilita el chunking (división en fragmentos) para el sistema de recuperación, permitiendo tamaños de chunk consistentes sin fragmentar excesivamente documentos cortos ni perder contexto en documentos largos.
 \end{itemize}
 
 \section{Distribución de Palabras por Documento}
 
-El análisis por equipo del número de palabras contenidas en cada documento tras el preprocesamiento y traducción muestra patrones interesantes.
+El análisis por equipo del número de palabras muestra una variabilidad significativa que refleja diferencias en cobertura mediática y trayectoria competitiva.
 
 \begin{figure}[ht]
 \centering
@@ -42,23 +81,23 @@ El análisis por equipo del número de palabras contenidas en cada documento tra
 \centering
 \vspace{4cm}
 \textit{[Placeholder: Gráfica de barras horizontales]}\\
-\textit{Palabras por equipo (30 equipos): rango 1,500-8,000 palabras}
+\textit{Palabras por equipo (30 equipos): rango 1,500--8,000 palabras}
 \vspace{4cm}
 \end{minipage}}
-\caption{Número de palabras por equipo. Se observa variabilidad significativa entre equipos tier 1 (más palabras) y tier 2-3 (menos palabras).}
+\caption{Número de palabras por equipo. Se observa variabilidad significativa entre equipos tier 1 (más palabras) y tier 2--3 (menos palabras).}%
 \label{fig:palabras_doc}
 \end{figure}
 
 \subsection{Observaciones Principales}
 
 \begin{itemize}
-    \item \textbf{Variabilidad entre equipos}: El rango varía desde aproximadamente 1,500 palabras (equipos menos documentados) hasta más de 8,000 palabras (equipos con amplia trayectoria).
+    \item \textbf{Variabilidad entre equipos}: El rango varía desde aproximadamente 1,500 palabras (equipos menos documentados) hasta más de 8,000 palabras (equipos con amplia trayectoria). La desviación estándar de 1,800 palabras confirma esta distribución altamente desigual.
     
-    \item \textbf{Correlación con relevancia}: Los equipos con mayor número de palabras corresponden típicamente a organizaciones tier 1 con historiales extensos: Fnatic, Complexity, MOUZ, Natus Vincere, etc.
+    \item \textbf{Correlación con relevancia}: Los equipos con mayor número de palabras corresponden típicamente a organizaciones tier 1 con historiales extensos: Fnatic, Complexity, MOUZ, Team Spirit, Natus Vincere.
     
-    \item \textbf{Sesgo de popularidad identificado}: Esta distribución desigual revela un sesgo inherente de Liquipedia hacia equipos más establecidos, que será analizado en detalle en el Capítulo de Sesgos.
+    \item \textbf{Sesgo de popularidad identificado}: Esta distribución desigual revela un sesgo inherente de Liquipedia hacia equipos más establecidos, analizado en detalle en el Capítulo~\ref{ch:sesgos}.
     
-    \item \textbf{Implicaciones para recuperación}: En un sistema BM25, documentos más largos no necesariamente obtienen ventaja debido a la normalización por longitud implementada en el algoritmo.
+    \item \textbf{Implicaciones para recuperación}: En un sistema BM25, documentos más largos no necesariamente obtienen ventaja debido a la normalización por longitud implementada en el algoritmo, pero sí tienen mayor probabilidad de contener información relevante para consultas específicas.
 \end{itemize}
 
 \section{Análisis de Frecuencias de Términos}
@@ -70,11 +109,11 @@ El análisis de frecuencias muestra las 15 palabras más frecuentes en el corpus
 \fbox{\begin{minipage}{0.85\textwidth}
 \centering
 \vspace{4cm}
-\textit{[Placeholder: Gráfica de barras horizontales - Top 15 palabras]}\\
+\textit{[Placeholder: Gráfica de barras horizontales -- Top 15 palabras]}\\
 \textit{saltar, equipo, 2025, 2023, entrenador, esports, 2022, 2026, etc.}
 \vspace{4cm}
 \end{minipage}}
-\caption{Top 15 palabras más frecuentes en el corpus (stopwords excluidas). Predominan términos relacionados con el dominio: equipo, entrenador, esports, fechas.}
+\caption{Top 15 palabras más frecuentes en el corpus (stopwords excluidas). Predominan términos relacionados con el dominio: equipo, entrenador, esports, fechas.}%
 \label{fig:top_palabras}
 \end{figure}
 
@@ -83,29 +122,29 @@ El análisis de frecuencias muestra las 15 palabras más frecuentes en el corpus
 Los términos más frecuentes reflejan claramente el dominio del corpus:
 
 \begin{enumerate}
-    \item \textbf{"saltar"} (mayor frecuencia): Artefacto de navegación de Liquipedia que no se filtró completamente en el preprocesamiento. Representa una oportunidad de mejora en la limpieza.
+    \item \textbf{``saltar''} (mayor frecuencia): Artefacto de navegación de Liquipedia que no se filtró completamente en el preprocesamiento. Representa una oportunidad de mejora en la limpieza.
     
-    \item \textbf{"equipo"}: Término central del dominio, aparece en contextos de cambios de equipo, logros de equipo, descripción de equipos.
+    \item \textbf{''equipo''}: Término central del dominio, aparece en contextos de cambios de equipo, logros de equipo, descripción de equipos.
     
-    \item \textbf{"2025", "2023", "2022", "2026", "2024", "2021", "2019", "2018"}: Alta presencia de fechas indica que el corpus contiene información temporal rica (fichajes, torneos, fundaciones).
+    \item \textbf{''2025'', ''2023'', ''2022'', ''2026'', ''2024'', ''2021'', ''2019'', ''2018''}: Alta presencia de fechas indica que el corpus contiene información temporal rica (fichajes, torneos, fundaciones).
     
-    \item \textbf{"entrenador"}: Refleja la importancia de información sobre staff técnico en el corpus.
+    \item \textbf{''entrenador''}: Refleja la importancia de información sobre staff técnico en el corpus.
     
-    \item \textbf{"esports"}: Término genérico del dominio.
+    \item \textbf{''esports''}: Término genérico del dominio.
     
-    \item \textbf{"del", "team", "fecha"}: Mezcla de español e inglés residual, indicando que la traducción no fue perfecta o que algunos términos técnicos se preservaron.
+    \item \textbf{''del'', ``team'', ``fecha''}: Mezcla de español e inglés residual, indicando que la traducción no fue perfecta o que algunos términos técnicos se preservaron.
 \end{enumerate}
 
 \subsection{Implicaciones}
 
 \begin{itemize}
-    \item \textbf{Necesidad de limpieza adicional}: La presencia de "saltar" indica que el preprocesamiento puede refinarse para eliminar artefactos de navegación más exhaustivamente.
+    \item \textbf{Necesidad de limpieza adicional}: La presencia de ``saltar'' indica que el preprocesamiento puede refinarse para eliminar artefactos de navegación más exhaustivamente.
     
-    \item \textbf{Riqueza temporal}: La abundancia de años específicos sugiere que el corpus es adecuado para responder preguntas temporales como "¿Cuándo fichó X por Y?".
+    \item \textbf{Riqueza temporal}: La abundancia de años específicos sugiere que el corpus es adecuado para responder preguntas temporales como ``¿Cuándo fichó X por Y?''.
     
-    \item \textbf{Vocabulario específico del dominio}: Términos como "entrenador", "equipo", "esports" confirman que el corpus captura correctamente el vocabulario especializado.
+    \item \textbf{Vocabulario específico del dominio}: Términos como ``entrenador'', ``equipo'', ``esports'' confirman que el corpus captura correctamente el vocabulario especializado.
     
-    \item \textbf{Bilingüismo residual}: La mezcla español-inglés ("team", "fecha") puede afectar la recuperación de información si las consultas del usuario no coinciden en idioma con los términos del corpus.
+    \item \textbf{Bilingüismo residual}: La mezcla español-inglés (``team'', ``fecha'') puede afectar la recuperación de información si las consultas del usuario no coinciden en idioma con los términos del corpus.
 \end{itemize}
 
 \section{Densidad de Oraciones por Documento}
@@ -117,11 +156,11 @@ El análisis del número estimado de oraciones por documento proporciona una med
 \fbox{\begin{minipage}{0.85\textwidth}
 \centering
 \vspace{4cm}
-\textit{[Placeholder: Gráfica de barras horizontales - Densidad de oraciones]}\\
-\textit{Número de oraciones por equipo: rango 100-1,000 oraciones}
+\textit{[Placeholder: Gráfica de barras horizontales -- Densidad de oraciones]}\\
+\textit{Número de oraciones por equipo: rango 100--1,000 oraciones}
 \vspace{4cm}
 \end{minipage}}
-\caption{Número estimado de oraciones por documento. Equipos con mayor detalle informativo presentan mayor densidad de oraciones.}
+\caption{Número estimado de oraciones por documento. Equipos con mayor detalle informativo presentan mayor densidad de oraciones.}%
 \label{fig:densidad_oraciones}
 \end{figure}
 
@@ -132,7 +171,7 @@ El análisis del número estimado de oraciones por documento proporciona una med
     
     \item \textbf{Equipos con alta densidad}: Fnatic, Complexity, Team Spirit presentan las mayores densidades de oraciones, indicando narrativas detalladas sobre historiales, logros y cambios de roster.
     
-    \item \textbf{Equipos con baja densidad}: Equipos menos documentados (tier 2-3) presentan menor densidad, con información más esquemática.
+    \item \textbf{Equipos con baja densidad}: Equipos menos documentados (tier 2--3) presentan menor densidad, con información más esquemática.
     
     \item \textbf{Implicaciones para chunking}: Para el sistema RAG, documentos con alta densidad de oraciones permiten chunks más informativos, mientras que documentos con baja densidad pueden requerir chunks más largos para mantener contexto suficiente.
 \end{itemize}
@@ -145,7 +184,7 @@ Más allá de las visualizaciones, se realizaron análisis adicionales de calida
 
 Se identificaron patrones repetitivos en algunos documentos, típicamente correspondientes a:
 \begin{itemize}
-    \item Encabezados de secciones repetidos ("Roster actual", "Historial de transferencias")
+    \item Encabezados de secciones repetidos (``Roster actual'', ``Historial de transferencias'')
     \item Plantillas de Liquipedia no completamente filtradas
     \item Información duplicada en diferentes secciones de la misma página
 \end{itemize}
@@ -185,39 +224,134 @@ Esta consistencia permite diseñar estrategias de chunking que respeten límites
 
 La alta frecuencia de fechas y años indica que el corpus contiene rica información temporal, sugiriendo que el sistema debe ser capaz de responder preguntas temporales como:
 \begin{itemize}
-    \item "¿Quién era el entrenador de G2 en 2023?"
-    \item "¿Cuándo se fundó Natus Vincere?"
-    \item "¿Qué fichajes hizo FaZe Clan en 2024?"
+    \item ``¿Quién era el entrenador de G2 en 2023? ''
+    \item ``¿Cuándo se fundó Natus Vincere? ''
+    \item ``¿Qué fichajes hizo FaZe Clan en 2024? ''
 \end{itemize}
 
 \subsection{Entidades Nombradas}
 
 Se detectaron altas frecuencias de:
 \begin{itemize}
-    \item Nombres de jugadores (nicknames): "NiKo", "s1mple", "ZywOo", etc.
-    \item Nombres de equipos: "G2 Esports", "Natus Vincere", "FaZe Clan", etc.
-    \item Torneos: "PGL Major", "IEM", "BLAST Premier", etc.
-    \item Ubicaciones: "Europa", "América del Norte", "CIS", etc.
+    \item Nombres de jugadores (nicknames): ``NiKo'', ``s1mple'', ``ZywOo'', etc.
+    \item Nombres de equipos: ``G2 Esports'', ``Natus Vincere'', ``FaZe Clan'', etc.
+    \item Torneos: ``PGL Major'', ``IEM'', ``BLAST Premier'', etc.
+    \item Ubicaciones: ``Europa'', ``América del Norte'', ``CIS'', etc.
 \end{itemize}
 
 Esto sugiere que un sistema de Reconocimiento de Entidades Nombradas (NER) específico del dominio podría mejorar la recuperación de información.
+
+\section{Evaluación Preliminar del Sistema de Recuperación}
+
+Adicionalmente al análisis exploratorio del corpus, se realizó una evaluación preliminar del sistema de recuperación para validar su capacidad de encontrar información relevante. Esta evaluación temprana permite identificar fortalezas y debilidades antes del desarrollo completo del chatbot conversacional.
+
+\subsection{Métricas Seleccionadas}
+
+Para evaluar el sistema de recuperación se seleccionaron dos métricas complementarias que miden aspectos distintos del rendimiento:
+
+\subsubsection{BERTScore}
+
+BERTScore~\cite{zhang2019bertscore} compara la similitud semántica entre la respuesta generada y una referencia usando representaciones contextuales basadas en BERT. Esta métrica es más adecuada que métricas puramente léxicas como BLEU o ROUGE cuando hay reformulaciones, sinónimos o respuestas parafraseadas.
+
+\textbf{Justificación en este proyecto:}
+\begin{itemize}
+    \item El sistema debe devolver información correcta aunque esté expresada con otras palabras.
+    \item En un dominio como Liquipedia, la redacción puede variar mucho entre fuentes y resultados, pero el significado debe mantenerse.
+    \item BERTScore penaliza menos las diferencias de forma y se centra más en el significado, siendo más apropiada para evaluar sistemas RAG donde la información puede estar parafraseada.
+\end{itemize}
+
+\subsubsection{MRR (Mean Reciprocal Rank)}
+
+MRR mide en qué posición aparece el primer resultado relevante en un ranking de documentos recuperados. Es una métrica estándar para evaluar sistemas de recuperación de información donde el objetivo es encontrar resultados relevantes en las primeras posiciones.
+
+\textbf{Justificación en este proyecto:}
+\begin{itemize}
+    \item La información debe ser fácil de localizar en los primeros puestos del ranking para que el sistema RAG tenga acceso a contexto relevante.
+    \item Si el primer documento relevante aparece arriba, la experiencia de uso mejora significativamente y la generación será más precisa.
+    \item Refleja bien la utilidad de un sistema tipo RAG donde el módulo de recuperación alimenta al generador.
+\end{itemize}
+
+\subsection{Conjunto de Evaluación}
+
+Se construyó un conjunto de evaluación con 4 consultas representativas del dominio:
+
+\begin{enumerate}
+    \item ``¿Qué organización cambió de nombre desde Monarchs?'' $\rightarrow$ Respuesta: 9INE
+    \item ``¿Qué equipo fichó a un analista en noviembre de 2023?'' $\rightarrow$ Respuesta: 3DMAX
+    \item ``¿Qué equipo adquirió a Rainwaker en 2023?'' $\rightarrow$ Respuesta: 500
+    \item ``¿Qué organización firmó a Looking4Org en 2023?'' $\rightarrow$ Respuesta: 3DMAX
+\end{enumerate}
+
+Estas consultas evalúan diferentes aspectos: cambios de nombre organizacional, fichajes de staff técnico, adquisiciones de jugadores e información temporal específica.
+
+\subsection{Resultados de la Evaluación}
+
+Los resultados obtenidos con el sistema de recuperación basado en BM25 fueron:
+
+\begin{table}[ht]
+\centering
+\caption{Resultados de evaluación del sistema de recuperación}%
+\label{tab:eval_results}
+\begin{tabular}{lcc}
+\hline
+\textbf{Métrica} & \textbf{Valor Medio} & \textbf{Interpretación} \\
+\hline
+MRR & 0.5208 & Aceptable \\
+BERTScore F1 & 0.2809 & Mejorable \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection{Análisis de MRR}
+
+El **MRR medio de 0.5208** indica que el documento relevante aparece típicamente entre la segunda y tercera posición del ranking. Las consultas evaluadas devolvieron el resultado correcto en las posiciones 1, 2, 3 y 4, lo que representa un comportamiento razonable pero mejorable:
+
+\begin{itemize}
+    \item \textbf{Fortaleza}: El sistema encuentra el documento relevante dentro del top-5, garantizando que el contexto correcto esté disponible para la generación.
+    \item \textbf{Limitación}: No siempre coloca el documento más relevante en primera posición, lo que puede introducir ruido si el generador considera múltiples documentos.
+    \item \textbf{Mejora propuesta}: Implementar reranking semántico o ajustar parámetros BM25 (b, k1) para privilegiar precisión en posiciones tempranas.
+\end{itemize}
+
+\subsubsection{Análisis de BERTScore}
+
+El **BERTScore F1 medio de 0.2809** muestra que la similitud semántica entre la referencia y la salida recuperada es todavía limitada. Este resultado tiene dos interpretaciones:
+
+\begin{itemize}
+    \item \textbf{Explicación técnica}: El sistema de recuperación actual está basado principalmente en coincidencia léxica (BM25) y no en embeddings semánticos profundos, por lo que puede encontrar documentos relevantes pero no necesariamente el fragmento más alineado con la formulación de referencia.
+    \item \textbf{Limitación del corpus}: Los documentos largos (varios miles de palabras) contienen mucha información no relevante para la consulta específica, diluyendo la similitud semántica con respuestas concisas de referencia.
+    \item \textbf{Mejora propuesta}: Implementar chunking más fino para recuperar pasajes específicos en lugar de documentos completos, y considerar sistemas de recuperación híbridos que combinen BM25 con embeddings densos.
+\end{itemize}
+
+\subsection{Relación con los Objetivos del Proyecto}
+
+Estas métricas están alineadas con los objetivos del EDA y del sistema final:
+\begin{itemize}
+    \item \textbf{BERTScore} evalúa la calidad semántica de la información recuperada, midiendo si el contenido devuelto responde realmente a la consulta independientemente de la formulación exacta.
+    \item \textbf{MRR} evalúa la capacidad de priorizar información relevante en el ranking, aspecto crítico para que el generador RAG tenga acceso a contexto de calidad.
+\end{itemize}
+
+La combinación de ambas métricas proporciona una visión completa: MRR mide la \textit{capacidad de encontrar} información relevante, mientras que BERTScore mide la \textit{calidad semántica} de lo encontrado. Mantener ambas métricas por separado permite diagnosticar problemas específicos en cada componente del sistema.
 
 \section{Conclusiones del EDA}
 
 El análisis exploratorio permite extraer las siguientes conclusiones:
 
 \begin{enumerate}
-    \item \textbf{Corpus de calidad aceptable}: Las distribuciones observadas indican que el scraping capturó correctamente información relevante sin errores mayores.
+    \item \textbf{Corpus de calidad aceptable}: Las distribuciones observadas indican que el scraping capturó correctamente información relevante sin errores mayores. La validación de calidad confirma ausencia de documentos corruptos, vacíos o duplicados.
     
-    \item \textbf{Heterogeneidad controlada}: Aunque existe variabilidad en longitud entre documentos, no hay outliers extremos que requieran tratamiento especial.
+    \item \textbf{Heterogeneidad controlada}: Aunque existe variabilidad en longitud entre documentos (1,500--8,000 palabras), no hay outliers extremos que requieran tratamiento especial. La distribución aproximadamente normal facilita el procesamiento uniforme.
     
-    \item \textbf{Sesgo de popularidad identificado}: Equipos tier 1 tienen documentos significativamente más extensos, lo que debe considerarse en el análisis de sesgos.
+    \item \textbf{Sesgo de popularidad identificado}: Equipos tier 1 tienen documentos significativamente más extensos (desviación estándar de 1,800 palabras), lo que debe considerarse en el análisis de sesgos (Capítulo~\ref{ch:sesgos}).
     
-    \item \textbf{Oportunidades de mejora en preprocesamiento}: Artefactos como "saltar" y fragmentos en inglés indican que el pipeline de limpieza puede refinarse.
+    \item \textbf{Oportunidades de mejora en preprocesamiento}: Artefactos como ``saltar'' (elemento de navegación) y fragmentos residuales en inglés indican que el pipeline de limpieza puede refinarse para mayor calidad.
     
-    \item \textbf{Riqueza temporal}: El corpus contiene abundante información temporal, validando su idoneidad para responder preguntas sobre fichajes y cambios históricos.
+    \item \textbf{Riqueza temporal}: El corpus contiene abundante información temporal, validando su idoneidad para responder preguntas sobre fichajes, cambios de roster y eventos históricos. La alta frecuencia de años (2018--2026) confirma cobertura temporal amplia.
     
-    \item \textbf{Vocabulario específico del dominio}: Los términos más frecuentes confirman que el corpus captura correctamente el lenguaje de esports profesionales.
+    \item \textbf{Vocabulario específico del dominio}: Los términos más frecuentes (equipo, entrenador, esports) confirman que el corpus captura correctamente el lenguaje técnico de esports profesionales.
+    
+    \item \textbf{Sistema de recuperación funcional}: La evaluación preliminar con MRR=0.5208 demuestra que el sistema BM25 encuentra documentos relevantes dentro del top-5, proporcionando base funcional para el sistema RAG completo.
+    
+    \item \textbf{Necesidad de mejora semántica}: BERTScore F1=0.2809 indica que, aunque la recuperación léxica funciona, la similitud semántica profunda es limitada. Se requiere chunking más fino o recuperación híbrida para mejorar la precisión.
 \end{enumerate}
 
-Estos hallazgos fundamentan decisiones de diseño del sistema RAG y guían el análisis de sesgos del siguiente capítulo.
+Estos hallazgos fundamentan decisiones de diseño del sistema RAG, guían el análisis de sesgos del Capítulo~\ref{ch:sesgos}, y establecen una línea base cuantitativa para evaluar mejoras futuras en el sistema de recuperación y generación.

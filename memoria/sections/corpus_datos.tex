@@ -76,7 +76,7 @@ Se seleccionaron 30 equipos de Counter-Strike siguiendo criterios de relevancia 
 \begin{itemize}
     \item \textbf{Equipos tier 1}: Organizaciones de élite con presencia constante en torneos principales (G2 Esports, Natus Vincere, FaZe Clan, etc.).
     
-    \item \textbf{Equipos tier 2-3}: Organizaciones emergentes o regionales para aumentar diversidad del corpus.
+    \item \textbf{Equipos tier 2--3}: Organizaciones emergentes o regionales para aumentar diversidad del corpus.
     
     \item \textbf{Diversidad geográfica}: Equipos de Europa, América, Asia para capturar diferentes contextos organizacionales.
     
@@ -94,8 +94,8 @@ Los textos extraídos mediante scraping requieren un preprocesamiento exhaustivo
 \begin{itemize}
     \item Eliminación de etiquetas HTML residuales (\texttt{<span>}, \texttt{<div>}, etc.).
     \item Conversión de entidades HTML (\texttt{\&nbsp;}, \texttt{\&amp;}, etc.) a caracteres Unicode.
-    \item Eliminación de artefactos de navegación ("saltar", "editar", "ver historial").
-    \item Normalización de espacios en blanco: múltiples espacios → espacio simple, múltiples saltos de línea → máximo dos.
+    \item Eliminación de artefactos de navegación (``saltar'', ``editar'', ``ver historial'').
+    \item Normalización de espacios en blanco: múltiples espacios -> espacio simple, múltiples saltos de línea -> máximo dos.
 \end{itemize}
 
 \subsection{Traducción Automática}
@@ -154,19 +154,19 @@ Cada documento del corpus se almacena en formato JSON con la siguiente estructur
 
 \begin{verbatim}
 {
-  "team_name": "Nombre del equipo",
-  "url": "URL de Liquipedia",
-  "infobox": {
-    "location": "País/región",
-    "founded": "Año de fundación",
-    "coach": "Entrenador actual",
+  ''team_name'': ''Nombre del equipo'',
+  ''url'': ''URL de Liquipedia'',
+  ''infobox'': {
+    ''location'': ''País/región'',
+    ''founded'': ''Año de fundación'',
+    ''coach'': ''Entrenador actual'',
     ...
   },
-  "full_text": "Texto completo traducido al español",
-  "references": [
-    {"label": "Fuente", "url": "URL de referencia"}
+  ''full_text'': ''Texto completo traducido al español'',
+  ''references'': [
+    {''label'': ''Fuente'', ''url'': ''URL de referencia''}
   ],
-  "timestamp": "Fecha de extracción"
+  ''timestamp'': ''Fecha de extracción''
 }
 \end{verbatim}
 
