@@ -225,6 +225,14 @@ class DataIngestionPipeline:
             return "referencias"
         return "resumen_equipo"
 
+    def _clean_movement_text(self, text: str) -> str:
+        """Limpia referencias numéricas y espacios extra de los movimientos."""
+        # Eliminar referencias numéricas como [ 1 ], [2], etc.
+        text = re.sub(r'\s*\[\s*\d+\s*\]', '', text)
+        # Eliminar espacios múltiples
+        text = re.sub(r'\s{2,}', ' ', text)
+        return text.strip()
+
     def _split_sections(self, raw_text: str) -> list[tuple[str, str]]:
         text = " ".join((raw_text or "").split())
         if len(text) < 180:
@@ -291,7 +299,12 @@ class DataIngestionPipeline:
                 if not line:
                     continue
 
-                movement_text = f"{metadata['name']} {line}"
+                # Limpiar referencias numéricas de los movimientos
+                cleaned_line = self._clean_movement_text(line)
+                if not cleaned_line:
+                    continue
+
+                movement_text = f"{metadata['name']} {cleaned_line}"
                 cleaned_movement_text = self.cleaner.clean_text(movement_text)
                 if not validate_text_quality(cleaned_movement_text, min_length=30):
                     continue
@@ -299,7 +312,7 @@ class DataIngestionPipeline:
                 movement_metadata = dict(metadata)
                 movement_metadata["section"] = "movimientos"
                 movement_metadata["chunk_index"] = movement_index
-                movement_metadata["movement_text"] = line
+                movement_metadata["movement_text"] = cleaned_line
 
                 documents.append(
                     {

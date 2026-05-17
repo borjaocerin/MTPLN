@@ -277,7 +277,14 @@ class EsportsChatbot:
             return None
 
         team_name = str(record.get('name') or 'Equipo')
-        movements = [m for m in (record.get("movements") or []) if isinstance(m, str) and m.strip()]
+        movements = [
+            m for m in (record.get("movements") or [])
+                if (
+                    isinstance(m, str)
+                    and m.strip()
+                    and self._is_valid_movement_line(m)
+                )
+            ]
         if not movements:
             return f"No encontre movimientos registrados para {team_name} en los datos disponibles"
 
@@ -300,7 +307,7 @@ class EsportsChatbot:
             count = self._parse_requested_count(question)
             selected = movements[-count:]
 
-        selected = self._unique_preserve_order(selected)
+        selected = self._unique_movements_by_date(selected)
         lines = [self._format_movement_response_line(m, team_name) for m in selected]
 
         if len(lines) == 1:
@@ -310,6 +317,234 @@ class EsportsChatbot:
             f"Los últimos {len(lines)} movimientos de {team_name} son:\n"
             + "\n".join(f"- {line}" for line in lines)
         )
+
+    def _is_trajectory_question(self, question: str) -> bool:
+        q = question.lower()
+        keywords = ["carrera", "trayectoria", "historia", "trayecto", "career"]
+        return any(keyword in q for keyword in keywords) and " de " in q
+
+    def _extract_player_name(self, question: str) -> str | None:
+        # Busca el nombre que normalmente aparece después de 'de' en la pregunta
+        match = re.search(r"\bde\s+([^\?\.!,]+)", question, flags=re.IGNORECASE)
+        if not match:
+            return None
+        name = match.group(1).strip()
+        # Recortar palabras de cierre y artículos
+        name = re.sub(r"[\.:,\?\!]+$", "", name).strip()
+        name = re.sub(r"^(el|la|los|las)\s+", "", name, flags=re.IGNORECASE)
+        return name
+
+    def _find_movement_fragments_for_player(self, player_name: str) -> list[dict]:
+        if not player_name:
+            return []
+        p_norm = player_name.lower()
+        fragments: list[dict] = []
+        seen_texts = set()
+
+        for record in self.records:
+            team = str(record.get("name") or "")
+            for m in (record.get("movements") or []):
+                line = str(m or "").strip()
+                
+                if not line or not self._is_valid_movement_line(line):
+                    continue
+                if p_norm not in line.lower():
+                    continue
+                parts = re.split(r"\s+y\s+|\s+and\s+|;|/|\\n|\\.|\s+e\s+|,\s*|(?<=\d{4}):", line)
+                for part in parts:
+                    part_text = part.strip()
+                    if not part_text:
+                        continue
+                    if p_norm not in part_text.lower():
+                        continue
+                    if not self._is_valid_movement_line(part_text):
+                        continue
+
+                    cleaned = self._clean_movement_fragment_text(part_text)
+                    if not cleaned:
+                        continue
+
+                    if team and team.lower() not in cleaned.lower():
+                        source_text = f"{team} {cleaned}"
+                    else:
+                        source_text = cleaned
+
+                    if source_text in seen_texts:
+                        continue
+                    seen_texts.add(source_text)
+
+                    fragments.append({
+                        "team": team,
+                        "text": source_text,
+                        "url": record.get("url") or "",
+                        "raw": line,
+                    })
+
+        return fragments
+
+    def _clean_movement_fragment_text(self, text: str) -> str:
+        text = re.sub(r"\s*\[\s*\d+\s*\]", "", text)
+        text = re.sub(r"\s{2,}", " ", text)
+        return text.strip()
+
+    def _parse_movement_date(self, text: str) -> tuple[int, int, int] | None:
+        # Extrae fechas en formato día mes año y devuelve (año, mes, día)
+        months = {
+            "enero": 1,
+            "febrero": 2,
+            "marzo": 3,
+            "abril": 4,
+            "mayo": 5,
+            "junio": 6,
+            "julio": 7,
+            "agosto": 8,
+            "septiembre": 9,
+            "setiembre": 9,
+            "octubre": 10,
+            "noviembre": 11,
+            "diciembre": 12,
+        }
+        match = re.search(r"\b(\d{1,2})\s+de\s+([a-záéíóúñü]+)\s+de\s+(20\d{2}|19\d{2})\b", text, flags=re.IGNORECASE)
+        if match:
+            day = int(match.group(1))
+            month = months.get(match.group(2).lower(), 0)
+            year = int(match.group(3))
+            if 1 <= month <= 12:
+                return (year, month, day)
+        match = re.search(r"\b([a-záéíóúñü]+)\s+(\d{1,2}),?\s+(20\d{2}|19\d{2})\b", text, flags=re.IGNORECASE)
+        if match:
+            month = months.get(match.group(1).lower(), 0)
+            day = int(match.group(2))
+            year = int(match.group(3))
+            if 1 <= month <= 12:
+                return (year, month, day)
+        match = re.search(r"\b(20\d{2}|19\d{2})\b", text)
+        if match:
+            return (int(match.group(1)), 0, 0)
+        return None
+
+    def _build_trajectory_response(self, question: str) -> str | None:
+        player = self._extract_player_name(question)
+        if not player:
+            return None
+
+        fragments = self._find_movement_fragments_for_player(player)
+        if not fragments:
+            return f"No encontré movimientos para {player} en los datos disponibles."
+
+        # Ordenar cronológicamente según la fecha extraída de cada fragmento, con fallback al orden original
+        for index, frag in enumerate(fragments):
+            frag_date = self._parse_movement_date(frag["raw"])
+            frag["date"] = frag_date or (9999, 12, 31)
+            frag["original_index"] = index
+            frag["clean_text"] = self._clean_movement_fragment_text(frag["text"])
+
+        fragments.sort(key=lambda frag: (frag["date"], frag["original_index"]))
+
+        # Deduplicar movimientos idénticos
+        seen_texts = set()
+        unique_fragments = []
+        for frag in fragments:
+            cleaned = frag["clean_text"]
+            if cleaned in seen_texts:
+                continue
+            seen_texts.add(cleaned)
+            unique_fragments.append(frag)
+
+        context_lines = [frag["clean_text"] for frag in unique_fragments]
+        context = "\n".join(context_lines)
+        prompt = (
+            "Eres un asistente en español. A partir de los siguientes movimientos del jugador, "
+            f"extrae la trayectoria de {player}.\n\n"
+            "Instrucciones:\n"
+            "- Devuelve exactamente una línea por cada movimiento válido.\n"
+            "- No uses numeración, listas con guiones ni formato JSON.\n"
+            "- Conserva solo la información de movimiento sobre el jugador indicado.\n"
+            "- Mejora la sintaxis en español.\n\n"
+            f"Movimientos:\n{context}\n\nRespuesta:\n"
+        )
+
+        try:
+            result = self.generator(
+                prompt,
+                max_new_tokens=self.max_new_tokens,
+                max_length=None,
+                do_sample=False,
+                return_full_text=False,
+            )
+
+            if isinstance(result, list) and result:
+                generated_text = result[0].get("generated_text", "").strip()
+                if generated_text:
+                    return generated_text
+        except Exception:
+            return None
+
+        return None
+
+    def _is_valid_movement_line(self, text: str) -> bool:
+        text = text.lower()
+
+        keywords = [
+            "ficha",
+            "fichaje",
+            "fichar",
+            "firma",
+            "signed",
+            "signs",
+            "bench",
+            "benched",
+            "banquillo",
+            "adquiere",
+            "acquire",
+            "acquired",
+            "traspaso",
+            "transfer",
+            "vende",
+            "venta",
+            "buy",
+            "compra",
+            "comprar",
+            "swap",
+            "intercambia",
+            "join",
+            "joins",
+            "leaves",
+            "leaves the team",
+            "abandona",
+            "sale",
+            "renueva",
+            "renew",
+            "promueve",
+            "promoted",
+            "sube al roster",
+            "entra",
+            "incorpora",
+            "remove",
+            "removed",
+            "release",
+            "released",
+            "waive",
+            "waived",
+        ]
+
+        return any(keyword in text for keyword in keywords)
+
+    def _unique_movements_by_date(self, movements: list[str]) -> list[str]:
+        seen_dates = set()
+        unique = []
+
+        for movement in movements:
+            date = self._extract_date_from_text(movement)
+
+            # si no tiene fecha, usar texto
+            key = date if date else movement
+
+            if key not in seen_dates:
+                seen_dates.add(key)
+                unique.append(movement)
+
+        return unique
 
     def _build_tournament_response(self, question: str) -> str | None:
         record = self._find_team_record(question)
@@ -454,6 +689,11 @@ class EsportsChatbot:
     def answer(self, question: str) -> str:
         if self.generator is None:
             raise RuntimeError("El modelo local no está disponible; no se puede responder sin LLM.")
+
+        if self._is_trajectory_question(question):
+            trajectory_answer = self._build_trajectory_response(question)
+            if trajectory_answer:
+                return trajectory_answer
 
         movement_answer = self._build_movement_response(question) if self._is_movement_question(question) else None
         if movement_answer:
