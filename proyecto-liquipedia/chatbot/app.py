@@ -5,7 +5,6 @@ import re
 import sys
 import warnings
 from pathlib import Path
-
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 from transformers.utils import logging as hf_logging
@@ -295,6 +294,7 @@ class EsportsChatbot:
                     and self._is_valid_movement_line(m)
                 )
             ]
+        
         if not movements:
             return f"No encontre movimientos registrados para {team_name} en los datos disponibles"
 
@@ -315,9 +315,8 @@ class EsportsChatbot:
             selected = filtered[-count:]
         else:
             count = self._parse_requested_count(question)
-            selected = movements[-count:]
+            selected = movements[-count:] 
 
-        selected = self._unique_movements_by_date(selected)
         lines = [self._format_movement_response_line(m, team_name) for m in selected]
 
         if len(lines) == 1:
@@ -639,7 +638,6 @@ class EsportsChatbot:
 
                 players = self._extract_players_from_movement(movement_clean)
 
-                # ---- SWAP HANDLING ----
                 joined_players, left_players = self._handle_swap_movement(
                     movement_clean,
                     team_name
@@ -655,18 +653,14 @@ class EsportsChatbot:
 
                     continue
 
-                # ---- NORMAL JOIN ----
                 if self._is_join_movement(movement_clean):
-
                     for player in players:
                         normalized = player.lower()
 
                         if normalized not in joined:
                             joined[normalized] = player
 
-                # ---- NORMAL LEAVE ----
                 if self._is_leave_movement(movement_clean):
-
                     for player in players:
                         left.add(player.lower())
 
@@ -772,6 +766,7 @@ class EsportsChatbot:
             "bench",
             "banquillo",
             "separa",
+            "coloca a",
         ]
 
         return any(k in text for k in keywords)
@@ -789,85 +784,136 @@ class EsportsChatbot:
 
         return any(k in q for k in keywords)
 
-    def _extract_players_from_movement(self, text: str) -> list[str]:
-        blacklist = {
-            "finales",
-            "separa",
-            "acquired",
-            "signed",
-            "joins",
-            "benched",
-            "released",
-            "removed",
-            "este",
-            "vencimiento",
-            "hasta",
-            "abril",
-            "asistenete",
-            "hades",
-            "bleed",
-            "asistente",
-        }
+    def _is_player_transfer_context(self, text: str) -> bool:
+        t = text.lower()
 
-        team_names = {
-            str(record.get("name") or "").lower().strip()
-            for record in self.records
-            if record.get("name")
-        }
-
-        forbidden_roles = [
-            "entrenador",
-            "coach",
-            "analista",
-            "assistant coach",
-            "assistant",
-            "manager",
-            "streamer",
-            "creator",
+        join_keywords = [
+            "adquiere",
+            "ficha",
+            "firma",
+            "incorpora",
+            "reemplaza",
+            "contrata",
+            "trae a",
+            "promueve",
+            "se une",
         ]
 
-        candidates = re.findall(r"\b[A-Za-z0-9\-_]{3,20}\b", text)
+        leave_keywords = [
+            "se separa",
+            "abandona",
+            "deja",
+            "sale",
+            "lanza",
+            "banca",
+            "banco",
+            "lanza",
+            "bencha",
+            "expira",
+            "retira",
+            "coloca a",
+        ]
+
+        return any(k in t for k in join_keywords + leave_keywords)
+
+    def _extract_after_verbs(self, text: str) -> list[str]:
+
+        t = text.lower()
+        verbs = [
+            "adquiere", "ficha", "firma", "incorpora",
+            "reemplaza", "contrata", "trae a", "promueve"
+        ]
         players = []
 
-        for candidate in candidates:
-            c = candidate.lower()
-
-            if c in blacklist:
-                continue
-            if any(c == team.lower() for team in team_names):
-                continue
-            if c.isdigit():
+        for verb in verbs:
+            if verb not in t:
                 continue
 
-            role_pattern = re.compile(
-                rf"{re.escape(candidate)}\s+como\s+([a-zA-Záéíóúñü\s]+)",
-                flags=re.IGNORECASE
-            )
+            parts = re.split(rf"\b{re.escape(verb)}\b", text, flags=re.IGNORECASE)
+            for part in parts[1:]:
+                chunk = re.split(r",| y |;|\(|\.", part)[0]
+                candidates = re.findall(r"\b[A-Z][a-zA-Z0-9\-_]{2,20}\b", chunk)
+                players.extend(candidates)
 
-            role_match = role_pattern.search(text)
+        return players
 
-            if role_match:
+    def _extract_players_from_movement(self, text: str) -> list[str]:
+        if any(x in text.lower() for x in [
+            "entrenador", "coach", "analista",
+            "assistant", "manager", "director"
+        ]):
+            return []
 
-                role_text = role_match.group(1).lower()
+        if not self._is_player_transfer_context(text):
+            return []
 
-                if any(role in role_text for role in forbidden_roles):
-                    continue
+        players = []
 
-            english_role_pattern = re.compile(
-                rf"{re.escape(candidate)}\s+as\s+([a-zA-Z\s]+)",
-                flags=re.IGNORECASE
-            )
+        verbs = [
+            "adquiere",
+            "ficha",
+            "firma",
+            "incorpora",
+            "reemplaza",
+            "contrata",
+            "trae a",
+            "promueve",
+            "se une",
+            "benched",
+            "banco",
+            "removed",
+            "released",
+            "left",
+            "leaves",
+            "departs",
+            "transferred",
+            "sold",
+            "waived",
+            "baja",
+            "abandona",
+            "vende",
+            "traspasado",
+            "bench",
+            "banquillo",
+            "separa",
+            "intercambia",
+            "swap",
+            "intercambian",
+            "swapped",
+            "exchange",
+            "coloca a",
+        ]
 
-            english_match = english_role_pattern.search(text)
+        for verb in verbs:
+            if verb not in text.lower():
+                continue
+            
+            parts = re.split(rf"\b{re.escape(verb)}\b", text, flags=re.IGNORECASE)
 
-            if english_match:
+            for part in parts[1:]:
+                chunk = re.split(r",| y |;|\.|\(|\)| de | desde ", part)[0]
 
-                role_text = english_match.group(1).lower()
+                candidates = re.findall(
+                    r"\b[A-Za-z0-9\-_]{3,20}\b",
+                    chunk
+                )
 
-                if any(role in role_text for role in forbidden_roles):
-                    continue
+                for c in candidates:
+                    normalized = self._normalize_text(c)
 
-            players.append(candidate)
+                    if normalized in {
+                        self._normalize_text(r.get("name") or "")
+                        for r in self.records
+                    }:
+                        continue
+
+                    if normalized in {
+                        "plantilla", "completa", "equipo",
+                        "lista", "roster", "finales"
+                    }:
+                        continue
+
+                    players.append(c)
 
         return players
 
@@ -960,6 +1006,7 @@ class EsportsChatbot:
             trajectory_answer = self._build_trajectory_response(question)
             if trajectory_answer:
                 return trajectory_answer
+                
         roster_answer = self._build_roster_response(question) if self._is_roster_question(question) else None
         if roster_answer:
             return roster_answer
