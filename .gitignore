@@ -88,3 +88,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Resultados de análisis EDA
+/proyecto-liquipedia/EDA_results/
