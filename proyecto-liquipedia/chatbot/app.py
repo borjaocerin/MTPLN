@@ -8,6 +8,7 @@ from pathlib import Path
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 from transformers.utils import logging as hf_logging
+from huggingface_hub import login as hf_login
 
 
 DEFAULT_LOCAL_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
@@ -48,6 +49,15 @@ class EsportsChatbot:
         self.records = self._load_records()
 
     def _load_generator(self):
+        # Intentar autenticar con Hugging Face si hay token disponible
+        hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
+        if hf_token:
+            try:
+                hf_login(token=hf_token, add_to_git_credential=False)
+            except Exception:
+                # Si falla el login, continuar sin autenticar (modo anónimo)
+                pass
+        
         try:
             tokenizer = AutoTokenizer.from_pretrained(self.model_name, trust_remote_code=True)
             if tokenizer.pad_token_id is None and tokenizer.eos_token is not None:
@@ -1054,7 +1064,12 @@ class EsportsChatbot:
         raise RuntimeError("El modelo local no devolvió una respuesta válida.")
 
     def run_interactive(self) -> None:
-        print("Chatbot listo. Escribe 'salir' para terminar.\n")
+        print("Chatbot listo. Escribe 'salir' para terminar.")
+        print("Pregunta sobre equipos como 'G2 Esports' o 'FaZe Clan' o '3DMax,'")
+        print("sobre jugadores como 'm0nesy' o 's1mple' o")
+        print("sobre torneos como 'IEM Cologne Major 2026' ")
+        
+
         while True:
             try:
                 question = input("Tú: ").strip()
