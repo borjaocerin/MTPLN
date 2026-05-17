@@ -467,7 +467,7 @@ class EsportsChatbot:
         try:
             result = self.generator(
                 prompt,
-                max_new_tokens=self.max_new_tokens,
+                max_new_tokens=self.max_new_tokens + 30,
                 max_length=None,
                 do_sample=False,
                 return_full_text=False,
@@ -593,6 +593,93 @@ class EsportsChatbot:
             + "\n".join(f"- {team}" for team in participants)
         )
 
+    def _build_roster_response(self, question: str) -> str | None:
+        record = self._find_team_record(question)
+        if not record:
+            return None
+
+        team_name = str(record.get("name") or "Equipo")
+
+        movements = [
+            m for m in (record.get("movements") or [])
+            if isinstance(m, str) and m.strip()
+        ]
+
+        if not movements:
+            return f"No encontré movimientos para {team_name}"
+
+        # ordenar cronológicamente
+        movements.sort(
+            key=lambda m: self._parse_movement_date(m) or (0, 0, 0)
+        )
+
+        joined = {}   # {normalized_name: original_name}
+        left = set()  # set(normalized_name)
+
+        for movement in movements:
+
+            parts = re.split(r"\s+y\s+|\s+and\s+|;", movement)
+
+            for part in parts:
+                part = part.strip()
+                if not part:
+                    continue
+
+                movement_clean = self._clean_movement_text(part)
+
+                players = self._extract_players_from_movement(movement_clean)
+
+                # ---- SWAP HANDLING ----
+                joined_players, left_players = self._handle_swap_movement(
+                    movement_clean,
+                    team_name
+                )
+
+                if joined_players or left_players:
+
+                    for player in joined_players:
+                        joined[player.lower()] = player
+
+                    for player in left_players:
+                        left.add(player.lower())
+
+                    continue
+
+                # ---- NORMAL JOIN ----
+                if self._is_join_movement(movement_clean):
+
+                    for player in players:
+                        normalized = player.lower()
+
+                        if normalized not in joined:
+                            joined[normalized] = player
+
+                # ---- NORMAL LEAVE ----
+                if self._is_leave_movement(movement_clean):
+
+                    for player in players:
+                        left.add(player.lower())
+
+        # construir roster final
+        roster = [
+            original_name
+            for normalized_name, original_name in joined.items()
+            if normalized_name not in left
+        ]
+
+        roster = roster[-5:]  # últimos 5
+
+        if not roster:
+            return f"No pude reconstruir la plantilla actual de {team_name}"
+
+        return (
+            f"Plantilla actual de {team_name}:\n"
+            + "\n".join(
+                f"{i}. {player}"
+                for i, player in enumerate(roster, start=1)
+            )
+        )
+
     def _build_generic_team_info(self, question: str) -> str | None:
         record = self._find_team_record(question)
         if not record:
@@ -633,6 +720,175 @@ class EsportsChatbot:
             f"Pregunta: {question}\n"
             "Respuesta:"
         )
+
+    def _is_join_movement(self, text: str) -> bool:
+        text = text.lower()
+
+        keywords = [
+            "acquired",
+            "signed",
+            "joins",
+            "joined",
+            "ficha",
+            "fichado",
+            "incorpora",
+            "adquiere",
+            "promoted",
+            "added",
+            "compra",
+            "recruit",
+            "recruited",
+        ]
+
+        return any(k in text for k in keywords)
+
+    def _is_leave_movement(self, text: str) -> bool:
+        text = text.lower()
+
+        keywords = [
+            "benched",
+            "removed",
+            "released",
+            "left",
+            "leaves",
+            "departs",
+            "transferred",
+            "sold",
+            "waived",
+            "baja",
+            "abandona",
+            "vende",
+            "traspasado",
+            "bench",
+            "banquillo",
+            "separa",
+        ]
+
+        return any(k in text for k in keywords)
+
+    def _is_roster_question(self, question: str) -> bool:
+        q = question.lower()
+        keywords = [
+            "plantilla",
+            "roster",
+            "alineacion",
+            "alineación",
+            "lineup",
+            "jugadores",
+        ]
+
+        return any(k in q for k in keywords)
+
+    def _extract_players_from_movement(self, text: str) -> list[str]:
+        blacklist = {
+            "finales",
+            "separa",
+            "acquired",
+            "signed",
+            "joins",
+            "benched",
+            "released",
+            "removed",
+            "este",
+            "vencimiento",
+            "hasta",
+            "abril",
+            "asistenete",
+            "hades",
+            "bleed",
+            "asistente",
+        }
+
+        team_names = {
+            str(record.get("name") or "").lower().strip()
+            for record in self.records
+            if record.get("name")
+        }
+
+        forbidden_roles = [
+            "entrenador",
+            "coach",
+            "analista",
+            "assistant coach",
+            "assistant",
+            "manager",
+            "streamer",
+            "creator",
+        ]
+
+        candidates = re.findall(r"\b[A-Za-z0-9\-_]{3,20}\b", text)
+        players = []
+
+        for candidate in candidates:
+            c = candidate.lower()
+
+            if c in blacklist:
+                continue
+            if any(c == team.lower() for team in team_names):
+                continue
+            if c.isdigit():
+                continue
+
+            role_pattern = re.compile(
+                rf"{re.escape(candidate)}\s+como\s+([a-zA-Záéíóúñü\s]+)",
+                flags=re.IGNORECASE
+            )
+
+            role_match = role_pattern.search(text)
+
+            if role_match:
+
+                role_text = role_match.group(1).lower()
+
+                if any(role in role_text for role in forbidden_roles):
+                    continue
+
+            english_role_pattern = re.compile(
+                rf"{re.escape(candidate)}\s+as\s+([a-zA-Z\s]+)",
+                flags=re.IGNORECASE
+            )
+
+            english_match = english_role_pattern.search(text)
+
+            if english_match:
+
+                role_text = english_match.group(1).lower()
+
+                if any(role in role_text for role in forbidden_roles):
+                    continue
+
+            players.append(candidate)
+
+        return players
+
+    def _handle_swap_movement(
+        self,
+        movement: str,
+        team_name: str
+    ) -> tuple[list[str], list[str]]:
+
+        movement_lower = movement.lower()
+
+        swap_keywords = [
+            "intercambian",
+            "swap",
+            "swapped",
+            "exchange",
+        ]
+
+        if not any(k in movement_lower for k in swap_keywords):
+            return [], []
+
+        players = self._extract_players_from_movement(movement)
+
+        if len(players) != 2:
+            return [], []
+
+        player_a, player_b = players
+
+        normalized_team = self._normalize_text(team_name)
+
+        return [player_b], [player_a]
 
     def _is_tournament_question(self, question: str) -> bool:
         q = question.lower()
@@ -694,7 +950,10 @@ class EsportsChatbot:
             trajectory_answer = self._build_trajectory_response(question)
             if trajectory_answer:
                 return trajectory_answer
-
+        roster_answer = self._build_roster_response(question) if self._is_roster_question(question) else None
+        if roster_answer:
+            return roster_answer
+        
         movement_answer = self._build_movement_response(question) if self._is_movement_question(question) else None
         if movement_answer:
             return movement_answer
