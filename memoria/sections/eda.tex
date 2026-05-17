@@ -48,14 +48,8 @@ La distribución de longitud de documentos, medida en número de caracteres, mue
 
 \begin{figure}[ht]
 \centering
-\fbox{\begin{minipage}{0.75\textwidth}
-\centering
-\vspace{3cm}
-\textit{[Placeholder: Gráfica de distribución de longitud de documentos]}\\
-\textit{Histograma mostrando concentración en 20k--40k caracteres}
-\vspace{3cm}
-\end{minipage}}
-\caption{Distribución de longitud de documentos (caracteres). Se observa concentración entre 20k--40k caracteres con distribución normal.}%
+\includegraphics[width=0.85\textwidth]{imgs/distribucion_longitud_docs.png}
+\caption{Distribución de longitud de documentos (caracteres). Se observa concentración en el rango de 100--200 caracteres con distribución aproximadamente normal y una cola derecha hacia valores mayores.}%
 \label{fig:longitud_docs}
 \end{figure}
 
@@ -77,14 +71,8 @@ El análisis por equipo del número de palabras muestra una variabilidad signifi
 
 \begin{figure}[ht]
 \centering
-\fbox{\begin{minipage}{0.85\textwidth}
-\centering
-\vspace{4cm}
-\textit{[Placeholder: Gráfica de barras horizontales]}\\
-\textit{Palabras por equipo (30 equipos): rango 1,500--8,000 palabras}
-\vspace{4cm}
-\end{minipage}}
-\caption{Número de palabras por equipo. Se observa variabilidad significativa entre equipos tier 1 (más palabras) y tier 2--3 (menos palabras).}%
+\includegraphics[width=0.9\textwidth]{imgs/palabras_por_equipo.png}
+\caption{Número de palabras por equipo. Se observa variabilidad significativa: equipos con mayor trayectoria (azul, por encima de la media) contienen más información que equipos emergentes (coral, por debajo de la media). La línea roja indica la media del corpus.}%
 \label{fig:palabras_doc}
 \end{figure}
 
@@ -106,14 +94,8 @@ El análisis de frecuencias muestra las 15 palabras más frecuentes en el corpus
 
 \begin{figure}[ht]
 \centering
-\fbox{\begin{minipage}{0.85\textwidth}
-\centering
-\vspace{4cm}
-\textit{[Placeholder: Gráfica de barras horizontales -- Top 15 palabras]}\\
-\textit{saltar, equipo, 2025, 2023, entrenador, esports, 2022, 2026, etc.}
-\vspace{4cm}
-\end{minipage}}
-\caption{Top 15 palabras más frecuentes en el corpus (stopwords excluidas). Predominan términos relacionados con el dominio: equipo, entrenador, esports, fechas.}%
+\includegraphics[width=0.85\textwidth]{imgs/top_palabras_frecuentes.png}
+\caption{Top 15 palabras más frecuentes en el corpus tras filtrado de stopwords. Predominan términos específicos del dominio: ``organización'', ``deportes'', ``electrónicos'', ``esports'', junto con términos técnicos como ``counter'' y ``strike''. Los valores numéricos indican la frecuencia absoluta de cada término.}%
 \label{fig:top_palabras}
 \end{figure}
 
@@ -153,14 +135,8 @@ El análisis del número estimado de oraciones por documento proporciona una med
 
 \begin{figure}[ht]
 \centering
-\fbox{\begin{minipage}{0.85\textwidth}
-\centering
-\vspace{4cm}
-\textit{[Placeholder: Gráfica de barras horizontales -- Densidad de oraciones]}\\
-\textit{Número de oraciones por equipo: rango 100--1,000 oraciones}
-\vspace{4cm}
-\end{minipage}}
-\caption{Número estimado de oraciones por documento. Equipos con mayor detalle informativo presentan mayor densidad de oraciones.}%
+\includegraphics[width=0.9\textwidth]{imgs/densidad_oraciones.png}
+\caption{Número estimado de oraciones por documento. Equipos con mayor detalle informativo (verde, por encima de la media) presentan mayor densidad de oraciones que equipos con documentación más escueta (morado, por debajo de la media). La línea roja vertical marca la media del corpus.}%
 \label{fig:densidad_oraciones}
 \end{figure}
 

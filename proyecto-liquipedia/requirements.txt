@@ -9,3 +9,5 @@ torch
 sentencepiece
 safetensors
 accelerate
+pytest
+pytest-mock

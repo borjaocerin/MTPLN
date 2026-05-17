@@ -237,23 +237,6 @@ Para evitar que el contexto exceda la ventana del modelo, se implementaron dos e
     \item \textbf{Límite de documentos}: Se recuperan máximo 4 documentos, equilibrando contexto suficiente con eficiencia computacional.
 \end{itemize}
 
-\subsection{Diagrama de Arquitectura}
-
-La Figura~\ref{fig:arquitectura_rag} muestra el flujo completo del sistema:
-
-\begin{figure}[ht]
-\centering
-\fbox{\begin{minipage}{0.85\textwidth}
-\centering
-\vspace{5cm}
-\textit{[Placeholder: Diagrama de arquitectura del sistema RAG]}\\
-\textit{Flujo: Usuario $\rightarrow$ Query $\rightarrow$ BM25 Search $\rightarrow$ Top-k Docs $\rightarrow$ Prompt Construction $\rightarrow$ LLM $\rightarrow$ Response}
-\vspace{5cm}
-\end{minipage}}
-\caption{Arquitectura del sistema RAG implementado. El flujo integra recuperación léxica (BM25) con generación neural (Transformers) para respuestas contextualizadas.}%
-\label{fig:arquitectura_rag}
-\end{figure}
-
 \subsection{Consideraciones de Diseño}
 
 El diseño del sistema prioriza:

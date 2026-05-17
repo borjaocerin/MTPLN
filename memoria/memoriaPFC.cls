@@ -17,6 +17,7 @@
 \RequirePackage[T1]{fontenc}     % Codificación de fuente
 \RequirePackage[utf8]{inputenc}  % Codificación de entrada
 \RequirePackage[spanish,english]{babel}  % Idioma
+\RequirePackage{csquotes}        % Comillas contextuales
 \RequirePackage{setspace}        % Interlineado
 \RequirePackage[default,type1]{sourcesans} % Fuente moderna sans-serif (forzando Type1)
 \renewcommand{\familydefault}{\sfdefault} % Fuente por defecto sans-serif
@@ -26,6 +27,7 @@
 \RequirePackage{ifthen}          % Lógica condicional
 \RequirePackage[pdftex]{color}   % Colores
 \RequirePackage{fancyvrb}        % Verbose
+\RequirePackage{amsmath}         % Matemáticas avanzadas
 \RequirePackage{amssymb}         % Símbolos matemáticos
 \RequirePackage{multibib}        % Múltiples bibliografías
 \RequirePackage{listings}        % Código fuente

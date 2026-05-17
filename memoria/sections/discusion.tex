@@ -1,21 +1,187 @@
 ﻿\chapter{Discusión}
 \label{ch:discusion}
 
-Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+En este capítulo se interpretan los resultados obtenidos (Capítulo~\ref{ch:resultados}), se analizan las fortalezas y limitaciones del sistema desarrollado, se proponen líneas de trabajo futuro y se presentan las conclusiones finales del proyecto. La discusión se contextualiza en el marco de los objetivos académicos del proyecto y las contribuciones al campo del procesamiento del lenguaje natural aplicado a dominios especializados.
 
 \section{Interpretación de Resultados}
 
-Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+Los resultados experimentales presentados en el Capítulo~\ref{ch:resultados} demuestran que el sistema de recuperación basado en BM25 alcanza un rendimiento satisfactorio para la mayoría de las consultas evaluadas. Con un \textbf{MRR de 0.835} y una \textbf{precisión en primera posición del 83.33\%}, el sistema se sitúa en el rango superior de rendimiento reportado en la literatura para sistemas de recuperación léxica sobre corpus especializados~\cite{robertson2009probabilistic}.
+
+\subsection{Rendimiento en Consultas Estructuradas}
+
+El rendimiento perfecto (RR = 1.0) en cuatro de las seis categorías de consultas (resumen, fichajes, fichajes por año y plantilla) indica que el sistema es altamente efectivo cuando las consultas contienen \textbf{términos distintivos} que coinciden léxicamente con el contenido de los documentos. En el dominio de esports, los nombres de equipos actúan como identificadores únicos con alta especificidad, lo que facilita la recuperación precisa mediante coincidencia léxica. Sin embargo, es importante reconocer que este rendimiento se mide sobre un conjunto de evaluación relativamente pequeño (144 consultas) generado mediante plantillas, lo que no representa exhaustivamente el espacio completo de preguntas posibles que un usuario real podría formular.
+
+Este resultado es especialmente relevante en el contexto de un corpus construido mediante web scraping, donde la calidad y coherencia de los datos no están garantizadas \textit{a priori}. El proceso de limpieza y normalización (Capítulo~\ref{ch:corpus_datos}) fue efectivo para eliminar ruido y preservar información relevante, lo que se refleja en las métricas de precisión obtenidas.
+
+\subsection{Limitaciones en Consultas No Estructuradas}
+
+El bajo rendimiento en consultas de tipo \textit{historial de jugador} (RR = 0.016) revela una limitación fundamental del enfoque adoptado: la granularidad de los documentos no coincide con la granularidad de todas las consultas posibles. Los documentos están organizados por \textbf{equipos}, mientras que las consultas sobre jugadores requieren agregar información dispersa en múltiples documentos.
+
+Esta limitación no es exclusiva del algoritmo BM25, sino que es inherente al diseño del corpus. Un sistema de recuperación léxica no puede inferir relaciones transversales entre documentos sin información estructurada adicional (e.g., un grafo de conocimiento que conecte jugadores con equipos a lo largo del tiempo).
+
+El rendimiento intermedio en consultas sobre torneos (RR = 0.5) sugiere ambigüedad léxica: múltiples documentos pueden contener menciones a torneos sin que el sistema pueda discriminar cuál es el documento más relevante para la consulta específica. Esto indica la necesidad de incorporar señales contextuales adicionales (metadatos, fechas, tipo de documento) en el proceso de ranking.
+
+\subsection{Eficiencia Computacional}
+
+El tiempo de respuesta promedio de 0.159 milisegundos por consulta y un throughput de 144 consultas en 0.2 segundos demuestran que el sistema es viable para despliegue en producción. La eficiencia de BM25 con índices invertidos permite escalar el sistema a corpus de mayor tamaño sin degradación significativa del rendimiento, lo que es una ventaja competitiva frente a enfoques basados en embeddings densos que requieren cálculos de similitud coseno sobre grandes matrices.
 
 \section{Fortalezas y Limitaciones}
 
-Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+\subsection{Fortalezas del Sistema}
+
+\subsubsection{Construcción Automatizada del Corpus}
+
+El pipeline completo de web scraping (Selenium + BeautifulSoup), limpieza y traducción automática permitió construir un corpus de 240 documentos en español de manera completamente automatizada. Esta automatización es clave para la escalabilidad del sistema: agregar nuevos equipos o actualizar información existente requiere únicamente ejecutar el script de scraping, sin intervención manual.
+
+La traducción automática mediante \texttt{deep-translator} demostró ser efectiva para preservar el significado general de los textos, aunque con limitaciones en terminología técnica (ver sección de limitaciones).
+
+\subsubsection{Evaluación Sistemática y Reproducible}
+
+El conjunto de evaluación de 144 consultas, generado mediante plantillas estructuradas, proporciona una medida objetiva y reproducible del rendimiento del sistema. Este enfoque de evaluación sistemática es una contribución metodológica del proyecto, ya que muchos sistemas de pregunta-respuesta en dominios especializados carecen de evaluaciones cuantitativas rigurosas.
+
+Las métricas calculadas (MRR, P@K, R@K, HR@K) son estándar en la literatura de recuperación de información, lo que facilita la comparación con otros sistemas y permite validar mejoras futuras de manera objetiva.
+\textbf{Limitación metodológica importante}: Es necesario matizar que, aunque el rendimiento perfecto (RR = 1.0) en cuatro categorías de consultas es notable, este resultado se basa en un conjunto limitado de 144 consultas. El espacio de preguntas posibles sobre equipos de Counter-Strike es muchísimo más amplio: preguntas con formulaciones no contempladas en las plantillas, consultas que combinan múltiples tipos de información, o preguntas que requieren razonamiento implícito podrían revelar debilidades no detectadas en la evaluación actual. La alta precisión observada podría reflejar un ajuste involuntario (\textit{overfitting}) a las plantillas de evaluación diseñadas, más que una capacidad general de responder cualquier pregunta del dominio. Una evaluación más exhaustiva con consultas reales de usuarios (no sintéticas) sería necesaria para validar la robustez del sistema en condiciones de uso realistas.
+\subsubsection{Eficiencia y Simplicidad}
+
+El uso de BM25 en lugar de modelos de embeddings densos o transformers resulta en un sistema ligero, rápido y fácil de mantener. No requiere GPU para inferencia, lo que reduce costes de despliegue. La simplicidad del algoritmo también facilita la interpretabilidad: es posible explicar por qué un documento fue recuperado examinando los términos de la consulta que coinciden con el documento.
+
+\subsection{Limitaciones del Sistema}
+
+\subsubsection{Traducción Automática Imperfecta}
+
+La principal limitación identificada durante el desarrollo es la \textbf{traducción automática imperfecta} de términos técnicos y jerga específica del dominio de esports. Aunque \texttt{deep-translator} maneja bien textos generales, presenta dificultades con:
+
+\begin{itemize}
+    \item \textbf{Nombres de roles y posiciones}: Términos como \textit{entry fragger}, \textit{AWPer}, \textit{IGL} (in-game leader) a veces se traducen literalmente o se omiten, perdiendo información semántica relevante.
+    \item \textbf{Ambigüedad semántica en términos polisémicos}: El término inglés \textit{fire} (despedir a un miembro del equipo) se traduce frecuentemente como ``disparar'' o ``lanzar'' en lugar de ``despedir'', lo que distorsiona completamente el significado en contextos de fichajes y cambios de plantilla. Este tipo de error es crítico porque el traductor no puede inferir el contexto organizacional sin conocimiento del dominio.
+    \item \textbf{Nombres de organizaciones y patrocinadores}: Algunas traducciones automáticas alteran nombres propios, introduciendo inconsistencias.
+    \item \textbf{Contexto temporal}: Expresiones como \textit{most recent transfer} pueden traducirse de formas variadas, dificultando la normalización de consultas temporales.
+\end{itemize}
+
+Adicionalmente, existe una \textbf{falta de palabras clave (\textit{keywords}) específicas para cada tipo de consulta}. El sistema no distingue entre una consulta sobre fichajes recientes y una sobre fichajes históricos, ya que ambas contienen términos similares. Esto dificulta la recuperación precisa en consultas que requieren discriminación fina.
+
+\textbf{Propuesta de mitigación}: Crear un glosario de términos técnicos de esports con traducciones verificadas manualmente y aplicar post-procesamiento para normalizar términos clave antes de la indexación y la búsqueda.
+
+\subsubsection{Granularidad de Documentos Inapropiada para Consultas sobre Jugadores}
+
+Como se observó en los resultados, las consultas sobre jugadores individuales tienen un rendimiento muy bajo debido a que los documentos están centrados en equipos. Para responder preguntas como \enquote{¿En qué equipos ha jugado [jugador]?}, sería necesario agregar información de múltiples documentos de fichajes, lo que BM25 no puede hacer de manera nativa.
+
+\textbf{Propuesta de mitigación}: Generar documentos sintéticos centrados en jugadores mediante agregación de información de fichajes, o implementar un módulo de post-procesamiento que consolide resultados de múltiples documentos antes de presentarlos al usuario.
+
+\subsubsection{Falta de Razonamiento Temporal}
+
+El sistema no puede ordenar eventos por fecha ni comprender nociones temporales como \enquote{más reciente}, \enquote{último} o \enquote{en los últimos meses}. BM25 trata todas las ocurrencias de términos por igual, sin considerar cuándo ocurrieron los eventos descritos.
+
+\textbf{Propuesta de mitigación}: Extraer metadatos temporales (fechas) de los documentos durante el scraping y aplicar filtros o re-ranking basados en fechas cuando la consulta contiene términos temporales.
+
+\subsubsection{Cobertura Limitada del Corpus}
+
+El corpus actual contiene información de aproximadamente 30 equipos de Counter-Strike, lo que representa una fracción pequeña del ecosistema competitivo global. Equipos regionales o de menor tamaño no están representados, lo que limita la utilidad del sistema para preguntas sobre escenas esports locales o emergentes.
+
+\textbf{Propuesta de mitigación}: Ampliar el scraping a más páginas de Liquipedia, o incorporar fuentes adicionales como HLTV, foros de Reddit y cuentas oficiales de equipos en redes sociales.
 
 \section{Trabajo Futuro}
 
-Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium.
+\subsection{Transición a Embeddings Semánticos}
+
+La dirección técnica más prometedora para mejorar el sistema es la adopción de \textbf{embeddings semánticos} en lugar de (o en combinación con) BM25. Modelos como \texttt{Sentence-BERT}~\cite{reimers2019sentence} o embeddings multilingües (e.g., \texttt{paraphrase-multilingual-MiniLM}) pueden capturar similitud semántica entre consultas y documentos sin requerir coincidencia léxica exacta.
+
+Ventajas de los embeddings semánticos:
+\begin{itemize}
+    \item \textbf{Robustez ante paráfrasis}: Consultas como \enquote{¿Cuál es el roster de Astralis?} y \enquote{¿Qué jugadores tiene Astralis?} se mapean a representaciones cercanas en el espacio vectorial.
+    \item \textbf{Menor dependencia de traducciones perfectas}: Los embeddings pueden aprender relaciones semánticas incluso si los términos exactos no coinciden.
+    \item \textbf{Capacidad de capturar contexto}: Los embeddings contextuales de transformers consideran el significado de las palabras en su contexto, no solo su frecuencia.
+\end{itemize}
+
+Desventajas y desafíos:
+\begin{itemize}
+    \item \textbf{Coste computacional}: La generación de embeddings y el cálculo de similitud coseno son más lentos que BM25 con índices invertidos.
+    \item \textbf{Necesidad de GPU}: Para tiempos de respuesta razonables, se requiere inferencia en GPU.
+    \item \textbf{Interpretabilidad reducida}: No es trivial explicar por qué un documento fue recuperado en un espacio vectorial denso.
+\end{itemize}
+
+\textbf{Estrategia propuesta}: Implementar un sistema híbrido que combine BM25 (recuperación inicial rápida) con re-ranking basado en embeddings semánticos (refinamiento de los top-K candidatos). Este enfoque equilibra eficiencia y precisión semántica.
+
+\subsection{Integración de Modelos de Lenguaje Más Grandes}
+
+El chatbot actual utiliza un modelo pequeño (\texttt{Qwen2.5-0.5B-Instruct}) para la generación de respuestas. Integrar modelos más grandes y especializados (e.g., \texttt{Llama 3}, \texttt{GPT-4}, \texttt{Claude}) podría mejorar significativamente la calidad de las respuestas generadas, especialmente en tareas de razonamiento complejo o síntesis de información.
+
+Sin embargo, esto plantea desafíos de coste y latencia. Una alternativa intermedia sería afinar (\textit{fine-tuning}) un modelo de tamaño medio (7B-13B parámetros) en un corpus de pregunta-respuesta específico del dominio de esports.
+
+\subsection{Ampliación del Corpus con Fuentes Adicionales}
+
+Incorporar datos de fuentes complementarias a Liquipedia (HLTV, VLR.gg, Reddit, Twitter) permitiría aumentar la cobertura del sistema y capturar información más actualizada y diversa. Esto requeriría:
+\begin{itemize}
+    \item Desarrollar scrapers específicos para cada fuente.
+    \item Implementar técnicas de deduplicación y fusión de información.
+    \item Validar la calidad y fiabilidad de las fuentes externas.
+\end{itemize}
+
+\subsection{Incorporación de Razonamiento Temporal}
+
+Implementar un módulo de extracción de fechas (Named Entity Recognition para entidades temporales) y un componente de ranking temporal que priorice documentos recientes cuando la consulta contiene términos como \enquote{reciente}, \enquote{último}, \enquote{actual}. Esto mejoraría el rendimiento en consultas temporales que actualmente fallan.
+
+\subsection{Evaluación con Usuarios Reales}
+
+La evaluación actual se basa en un conjunto de consultas sintéticas. Una extensión natural sería realizar una evaluación con usuarios reales (periodistas de esports, analistas, fans) para medir la utilidad percibida del sistema, identificar tipos de consultas no anticipados y recoger feedback cualitativo sobre la calidad de las respuestas.
+
+\section{Aplicaciones Prácticas}
+
+El sistema desarrollado tiene potencial para ser utilizado como \textbf{asistente para periodistas y analistas de esports}. En un entorno profesional, los periodistas necesitan consultar rápidamente información histórica sobre equipos, jugadores y fichajes para redactar artículos, preparar análisis o verificar datos. Un chatbot que responda preguntas en lenguaje natural en español puede reducir significativamente el tiempo de investigación, permitiendo a los profesionales enfocarse en la narrativa y el análisis crítico en lugar de la búsqueda de datos.
+
+Otras aplicaciones potenciales incluyen:
+\begin{itemize}
+    \item \textbf{Herramienta educativa}: Para nuevos fans de Counter-Strike que desean aprender sobre equipos, jugadores y la historia del juego competitivo.
+    \item \textbf{Bot de Discord/Telegram}: Integración en servidores de comunidades de esports para responder preguntas frecuentes de manera automatizada.
+    \item \textbf{Base para sistemas de análisis predictivo}: La información histórica extraída podría alimentar modelos de predicción de resultados de partidos basados en rendimiento pasado de equipos.
+\end{itemize}
+
+\section{Reflexiones sobre el Proceso de Desarrollo}
+
+El mayor desafío técnico durante el desarrollo del proyecto fue el diseño e implementación de la \textbf{evaluación sistemática del sistema RAG}. A diferencia de tareas de NLP con datasets estándar (e.g., GLUE, SQuAD), no existía un conjunto de evaluación de referencia para sistemas de pregunta-respuesta en el dominio de esports en español.
+
+Fue necesario:
+\begin{enumerate}
+    \item Identificar los tipos de consultas más relevantes para el dominio mediante análisis exploratorio del corpus.
+    \item Diseñar plantillas de consulta que capturen variaciones léxicas naturales.
+    \item Asignar manualmente documentos relevantes (\textit{ground truth}) para cada consulta.
+    \item Implementar el cálculo de métricas estándar (MRR, P@K, R@K) de manera eficiente.
+    \item Analizar resultados desagregados por tipo de consulta para identificar patrones de error.
+\end{enumerate}
+
+Este proceso metodológico es una contribución importante del proyecto, ya que proporciona un marco reproducible para evaluar sistemas similares en otros dominios especializados.
+
+Otros desafíos técnicos incluyen:
+\begin{itemize}
+    \item \textbf{Web scraping dinámico}: Liquipedia utiliza JavaScript para cargar contenido de manera dinámica. Fue necesario implementar scroll automático y esperas explícitas en Selenium para extraer todo el contenido de las páginas.
+    \item \textbf{Limpieza de datos}: El HTML de Liquipedia contiene muchas tablas, listas anidadas y marcado inconsistente. El proceso de limpieza requirió múltiples iteraciones para eliminar ruido sin perder información relevante.
+    \item \textbf{Traducción por fragmentos (\textit{chunks})}: Debido a límites de longitud de las APIs de traducción, fue necesario dividir textos largos en fragmentos, traducir cada uno y reconstruir el documento completo manteniendo coherencia.
+\end{itemize}
 
 \section{Conclusiones}
 
-Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.
+Este proyecto ha demostrado la viabilidad de construir un sistema completo de pregunta-respuesta en español para el dominio de esports profesional de Counter-Strike utilizando técnicas de web scraping, procesamiento del lenguaje natural y recuperación de información. Los principales logros del proyecto incluyen:
+
+\begin{enumerate}
+    \item \textbf{Construcción automatizada de un corpus en español}: Se desarrolló un pipeline completo que extrae, limpia, traduce y estructura información de Liquipedia, resultando en un corpus de 240 documentos con más de 15\,000 tokens únicos.
+    
+    \item \textbf{Sistema de recuperación eficiente}: La implementación de BM25 alcanza un MRR de 0.835 con tiempos de respuesta inferiores a 1 milisegundo, demostrando que enfoques léxicos simples pueden ser altamente efectivos en dominios especializados con terminología distintiva.
+    
+    \item \textbf{Evaluación sistemática y reproducible}: Se diseñó un conjunto de evaluación de 144 consultas que permite medir objetivamente el rendimiento del sistema y comparar diferentes enfoques técnicos.
+    
+    \item \textbf{Identificación de limitaciones y propuestas de mejora}: El análisis detallado de errores reveló limitaciones específicas (traducción automática, granularidad de documentos, razonamiento temporal) y se propusieron soluciones concretas para cada una.
+\end{enumerate}
+
+El proyecto cumple con los objetivos académicos de la asignatura de Minería de Texto y Procesamiento del Lenguaje Natural:
+\begin{itemize}
+    \item \textbf{Corpus construido mediante web scraping}: En castellano, con procesamiento y limpieza justificados.
+    \item \textbf{Análisis exploratorio riguroso}: Con visualizaciones y estadísticas (Capítulo~\ref{ch:eda}).
+    \item \textbf{Evaluación con métricas estándar}: Justificadas por la literatura de recuperación de información.
+    \item \textbf{Análisis de sesgos}: Identificación de sesgos geográficos, temporales y de popularidad (Capítulo~\ref{ch:sesgos}).
+    \item \textbf{Referencias académicas}: Estado del arte fundamentado en literatura científica (Capítulo~\ref{ch:estado_arte}).
+\end{itemize}
+
+Las limitaciones identificadas (especialmente la traducción automática imperfecta y la falta de capacidad de razonamiento temporal) no invalidan los resultados, sino que proporcionan una hoja de ruta clara para futuras iteraciones del sistema. La transición a embeddings semánticos emerge como la dirección técnica más prometedora para mejorar el rendimiento manteniendo la eficiencia.
+
+Finalmente, el sistema desarrollado tiene aplicaciones prácticas concretas, especialmente como asistente para periodistas y analistas de esports que requieren acceso rápido a información histórica estructurada. El código del proyecto es reproducible y está documentado, facilitando su extensión por parte de la comunidad académica y profesional interesada en sistemas de NLP para dominios especializados.
 
